@@ -19,5 +19,6 @@
 #include "exponential_smoothing.hpp"
 #include "prophet.hpp"
 #include "gradient_boosting.hpp"
+#include "dlinear.hpp"
 
 #endif // TS_FORECAST_HPP

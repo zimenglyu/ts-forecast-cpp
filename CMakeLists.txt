@@ -29,6 +29,7 @@ set(LIB_SOURCES
     src/exponential_smoothing.cpp
     src/prophet.cpp
     src/gradient_boosting.cpp
+    src/dlinear.cpp
     src/utils.cpp
 )
 
@@ -60,6 +61,11 @@ enable_testing()
 add_executable(run_tests tests/test_all.cpp)
 target_link_libraries(run_tests ts_forecast)
 add_test(NAME AllTests COMMAND run_tests)
+
+# ETTh1 Dataset Test
+add_executable(test_etth1 tests/test_etth1.cpp)
+target_link_libraries(test_etth1 ts_forecast)
+add_test(NAME ETTh1Tests COMMAND test_etth1)
 
 # Installation
 install(TARGETS ts_forecast ts_forecast_shared
