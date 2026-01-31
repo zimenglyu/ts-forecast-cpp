@@ -56,6 +56,9 @@ target_link_libraries(example_gradient_boosting ts_forecast)
 add_executable(demo examples/demo.cpp)
 target_link_libraries(demo ts_forecast)
 
+add_executable(normalize_etth1 examples/normalize_etth1.cpp)
+target_link_libraries(normalize_etth1 ts_forecast)
+
 # Tests
 enable_testing()
 add_executable(run_tests tests/test_all.cpp)
