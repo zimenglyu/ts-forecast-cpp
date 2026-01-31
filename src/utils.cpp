@@ -486,6 +486,145 @@ std::vector<std::vector<double>> StandardScaler::inverse_transform(
     return result;
 }
 
+// ============================================================
+// Binary Serialization for Scalers
+// ============================================================
+
+// Magic numbers for file format validation
+constexpr uint32_t MINMAX_MAGIC = 0x4D4D5343;   // "MMSC"
+constexpr uint32_t STANDARD_MAGIC = 0x53545343; // "STSC"
+constexpr uint32_t FILE_VERSION = 1;
+
+void MinMaxScaler::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted scaler");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    // Write header
+    file.write(reinterpret_cast<const char*>(&MINMAX_MAGIC), sizeof(MINMAX_MAGIC));
+    file.write(reinterpret_cast<const char*>(&FILE_VERSION), sizeof(FILE_VERSION));
+
+    // Write number of features
+    uint32_t n_features = static_cast<uint32_t>(min_vals_.size());
+    file.write(reinterpret_cast<const char*>(&n_features), sizeof(n_features));
+
+    // Write min values
+    file.write(reinterpret_cast<const char*>(min_vals_.data()),
+               min_vals_.size() * sizeof(double));
+
+    // Write max values
+    file.write(reinterpret_cast<const char*>(max_vals_.data()),
+               max_vals_.size() * sizeof(double));
+
+    file.close();
+}
+
+void MinMaxScaler::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    // Read and validate header
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != MINMAX_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a MinMaxScaler file");
+    }
+    if (version != FILE_VERSION) {
+        throw std::runtime_error("Unsupported file version");
+    }
+
+    // Read number of features
+    uint32_t n_features;
+    file.read(reinterpret_cast<char*>(&n_features), sizeof(n_features));
+
+    // Read min values
+    min_vals_.resize(n_features);
+    file.read(reinterpret_cast<char*>(min_vals_.data()),
+              n_features * sizeof(double));
+
+    // Read max values
+    max_vals_.resize(n_features);
+    file.read(reinterpret_cast<char*>(max_vals_.data()),
+              n_features * sizeof(double));
+
+    is_fitted_ = true;
+    file.close();
+}
+
+void StandardScaler::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted scaler");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    // Write header
+    file.write(reinterpret_cast<const char*>(&STANDARD_MAGIC), sizeof(STANDARD_MAGIC));
+    file.write(reinterpret_cast<const char*>(&FILE_VERSION), sizeof(FILE_VERSION));
+
+    // Write number of features
+    uint32_t n_features = static_cast<uint32_t>(means_.size());
+    file.write(reinterpret_cast<const char*>(&n_features), sizeof(n_features));
+
+    // Write means
+    file.write(reinterpret_cast<const char*>(means_.data()),
+               means_.size() * sizeof(double));
+
+    // Write stds
+    file.write(reinterpret_cast<const char*>(stds_.data()),
+               stds_.size() * sizeof(double));
+
+    file.close();
+}
+
+void StandardScaler::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    // Read and validate header
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != STANDARD_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a StandardScaler file");
+    }
+    if (version != FILE_VERSION) {
+        throw std::runtime_error("Unsupported file version");
+    }
+
+    // Read number of features
+    uint32_t n_features;
+    file.read(reinterpret_cast<char*>(&n_features), sizeof(n_features));
+
+    // Read means
+    means_.resize(n_features);
+    file.read(reinterpret_cast<char*>(means_.data()),
+              n_features * sizeof(double));
+
+    // Read stds
+    stds_.resize(n_features);
+    file.read(reinterpret_cast<char*>(stds_.data()),
+              n_features * sizeof(double));
+
+    is_fitted_ = true;
+    file.close();
+}
+
 namespace matrix {
 
 Matrix zeros(size_t rows, size_t cols) {

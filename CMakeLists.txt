@@ -73,6 +73,11 @@ add_executable(test_etth1 tests/test_etth1.cpp)
 target_link_libraries(test_etth1 ts_forecast)
 add_test(NAME ETTh1Tests COMMAND test_etth1)
 
+# Save/Load Test
+add_executable(test_save_load tests/test_save_load.cpp)
+target_link_libraries(test_save_load ts_forecast)
+add_test(NAME SaveLoadTests COMMAND test_save_load)
+
 # Installation
 install(TARGETS ts_forecast ts_forecast_shared
     LIBRARY DESTINATION lib

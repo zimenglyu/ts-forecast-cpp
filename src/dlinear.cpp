@@ -738,4 +738,274 @@ ForecastResult Linear::forecast(int steps) const {
     return result;
 }
 
+// ============================================================
+// Binary Serialization
+// ============================================================
+
+// Magic numbers for file format validation
+constexpr uint32_t DLINEAR_MAGIC = 0x444C494E;  // "DLIN"
+constexpr uint32_t NLINEAR_MAGIC = 0x4E4C494E;  // "NLIN"
+constexpr uint32_t LINEAR_MAGIC = 0x4C494E45;   // "LINE"
+constexpr uint32_t MODEL_VERSION = 1;
+
+// Helper functions for binary I/O
+namespace {
+
+void write_vector(std::ofstream& file, const std::vector<double>& vec) {
+    uint32_t size = static_cast<uint32_t>(vec.size());
+    file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    file.write(reinterpret_cast<const char*>(vec.data()), size * sizeof(double));
+}
+
+void read_vector(std::ifstream& file, std::vector<double>& vec) {
+    uint32_t size;
+    file.read(reinterpret_cast<char*>(&size), sizeof(size));
+    vec.resize(size);
+    file.read(reinterpret_cast<char*>(vec.data()), size * sizeof(double));
+}
+
+void write_matrix(std::ofstream& file, const std::vector<std::vector<double>>& mat) {
+    uint32_t rows = static_cast<uint32_t>(mat.size());
+    uint32_t cols = rows > 0 ? static_cast<uint32_t>(mat[0].size()) : 0;
+    file.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+    file.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+    for (const auto& row : mat) {
+        file.write(reinterpret_cast<const char*>(row.data()), cols * sizeof(double));
+    }
+}
+
+void read_matrix(std::ifstream& file, std::vector<std::vector<double>>& mat) {
+    uint32_t rows, cols;
+    file.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+    file.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+    mat.resize(rows);
+    for (uint32_t i = 0; i < rows; ++i) {
+        mat[i].resize(cols);
+        file.read(reinterpret_cast<char*>(mat[i].data()), cols * sizeof(double));
+    }
+}
+
+} // anonymous namespace
+
+void DLinear::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    // Write header
+    file.write(reinterpret_cast<const char*>(&DLINEAR_MAGIC), sizeof(DLINEAR_MAGIC));
+    file.write(reinterpret_cast<const char*>(&MODEL_VERSION), sizeof(MODEL_VERSION));
+
+    // Write model parameters
+    file.write(reinterpret_cast<const char*>(&seq_len_), sizeof(seq_len_));
+    file.write(reinterpret_cast<const char*>(&pred_len_), sizeof(pred_len_));
+    file.write(reinterpret_cast<const char*>(&kernel_size_), sizeof(kernel_size_));
+    file.write(reinterpret_cast<const char*>(&n_features_), sizeof(n_features_));
+    file.write(reinterpret_cast<const char*>(&target_idx_), sizeof(target_idx_));
+    file.write(reinterpret_cast<const char*>(&mean_), sizeof(mean_));
+    file.write(reinterpret_cast<const char*>(&std_), sizeof(std_));
+    file.write(reinterpret_cast<const char*>(&is_multivariate_), sizeof(is_multivariate_));
+
+    // Write weights
+    write_matrix(file, W_trend_);
+    write_vector(file, b_trend_);
+    write_matrix(file, W_seasonal_);
+    write_vector(file, b_seasonal_);
+
+    // Write stored data for forecasting
+    write_vector(file, data_);
+
+    // Write multivariate data if applicable
+    uint32_t has_mv = is_multivariate_ ? 1 : 0;
+    file.write(reinterpret_cast<const char*>(&has_mv), sizeof(has_mv));
+    if (is_multivariate_) {
+        write_matrix(file, multivariate_data_);
+    }
+
+    file.close();
+}
+
+void DLinear::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    // Read and validate header
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != DLINEAR_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a DLinear model file");
+    }
+    if (version != MODEL_VERSION) {
+        throw std::runtime_error("Unsupported model version");
+    }
+
+    // Read model parameters
+    file.read(reinterpret_cast<char*>(&seq_len_), sizeof(seq_len_));
+    file.read(reinterpret_cast<char*>(&pred_len_), sizeof(pred_len_));
+    file.read(reinterpret_cast<char*>(&kernel_size_), sizeof(kernel_size_));
+    file.read(reinterpret_cast<char*>(&n_features_), sizeof(n_features_));
+    file.read(reinterpret_cast<char*>(&target_idx_), sizeof(target_idx_));
+    file.read(reinterpret_cast<char*>(&mean_), sizeof(mean_));
+    file.read(reinterpret_cast<char*>(&std_), sizeof(std_));
+    file.read(reinterpret_cast<char*>(&is_multivariate_), sizeof(is_multivariate_));
+
+    // Read weights
+    read_matrix(file, W_trend_);
+    read_vector(file, b_trend_);
+    read_matrix(file, W_seasonal_);
+    read_vector(file, b_seasonal_);
+
+    // Read stored data
+    read_vector(file, data_);
+
+    // Read multivariate data if applicable
+    uint32_t has_mv;
+    file.read(reinterpret_cast<char*>(&has_mv), sizeof(has_mv));
+    if (has_mv) {
+        read_matrix(file, multivariate_data_);
+    }
+
+    is_fitted_ = true;
+    file.close();
+}
+
+void NLinear::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    // Write header
+    file.write(reinterpret_cast<const char*>(&NLINEAR_MAGIC), sizeof(NLINEAR_MAGIC));
+    file.write(reinterpret_cast<const char*>(&MODEL_VERSION), sizeof(MODEL_VERSION));
+
+    // Write model parameters
+    file.write(reinterpret_cast<const char*>(&seq_len_), sizeof(seq_len_));
+    file.write(reinterpret_cast<const char*>(&pred_len_), sizeof(pred_len_));
+    file.write(reinterpret_cast<const char*>(&mean_), sizeof(mean_));
+    file.write(reinterpret_cast<const char*>(&std_), sizeof(std_));
+
+    // Write weights
+    write_matrix(file, W_);
+    write_vector(file, b_);
+
+    // Write stored data
+    write_vector(file, data_);
+
+    file.close();
+}
+
+void NLinear::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    // Read and validate header
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != NLINEAR_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a NLinear model file");
+    }
+    if (version != MODEL_VERSION) {
+        throw std::runtime_error("Unsupported model version");
+    }
+
+    // Read model parameters
+    file.read(reinterpret_cast<char*>(&seq_len_), sizeof(seq_len_));
+    file.read(reinterpret_cast<char*>(&pred_len_), sizeof(pred_len_));
+    file.read(reinterpret_cast<char*>(&mean_), sizeof(mean_));
+    file.read(reinterpret_cast<char*>(&std_), sizeof(std_));
+
+    // Read weights
+    read_matrix(file, W_);
+    read_vector(file, b_);
+
+    // Read stored data
+    read_vector(file, data_);
+
+    is_fitted_ = true;
+    file.close();
+}
+
+void Linear::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    // Write header
+    file.write(reinterpret_cast<const char*>(&LINEAR_MAGIC), sizeof(LINEAR_MAGIC));
+    file.write(reinterpret_cast<const char*>(&MODEL_VERSION), sizeof(MODEL_VERSION));
+
+    // Write model parameters
+    file.write(reinterpret_cast<const char*>(&seq_len_), sizeof(seq_len_));
+    file.write(reinterpret_cast<const char*>(&pred_len_), sizeof(pred_len_));
+    file.write(reinterpret_cast<const char*>(&mean_), sizeof(mean_));
+    file.write(reinterpret_cast<const char*>(&std_), sizeof(std_));
+
+    // Write weights
+    write_matrix(file, W_);
+    write_vector(file, b_);
+
+    // Write stored data
+    write_vector(file, data_);
+
+    file.close();
+}
+
+void Linear::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    // Read and validate header
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != LINEAR_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a Linear model file");
+    }
+    if (version != MODEL_VERSION) {
+        throw std::runtime_error("Unsupported model version");
+    }
+
+    // Read model parameters
+    file.read(reinterpret_cast<char*>(&seq_len_), sizeof(seq_len_));
+    file.read(reinterpret_cast<char*>(&pred_len_), sizeof(pred_len_));
+    file.read(reinterpret_cast<char*>(&mean_), sizeof(mean_));
+    file.read(reinterpret_cast<char*>(&std_), sizeof(std_));
+
+    // Read weights
+    read_matrix(file, W_);
+    read_vector(file, b_);
+
+    // Read stored data
+    read_vector(file, data_);
+
+    is_fitted_ = true;
+    file.close();
+}
+
 } // namespace ts

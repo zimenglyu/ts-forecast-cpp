@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <string>
 #include <random>
+#include <fstream>
+#include <cstdint>
 
 namespace ts {
 
@@ -174,6 +176,16 @@ public:
     const std::vector<double>& min_vals() const { return min_vals_; }
     const std::vector<double>& max_vals() const { return max_vals_; }
 
+    /**
+     * Save scaler to binary file
+     */
+    void save(const std::string& filename) const;
+
+    /**
+     * Load scaler from binary file
+     */
+    void load(const std::string& filename);
+
 private:
     std::vector<double> min_vals_;
     std::vector<double> max_vals_;
@@ -236,6 +248,16 @@ public:
     double std() const { return stds_.empty() ? 1.0 : stds_[0]; }
     const std::vector<double>& means() const { return means_; }
     const std::vector<double>& stds() const { return stds_; }
+
+    /**
+     * Save scaler to binary file
+     */
+    void save(const std::string& filename) const;
+
+    /**
+     * Load scaler from binary file
+     */
+    void load(const std::string& filename);
 
 private:
     std::vector<double> means_;
