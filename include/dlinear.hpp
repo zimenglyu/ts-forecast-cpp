@@ -85,6 +85,12 @@ public:
     std::vector<double> loss_history() const { return loss_history_; }
 
     /**
+     * Get total number of trainable parameters
+     * @return Number of parameters (weights + biases)
+     */
+    size_t parameter_count() const;
+
+    /**
      * Save model to binary file
      */
     void save(const std::string& filename) const;
@@ -167,6 +173,13 @@ public:
     std::vector<double> predict(const std::vector<double>& input) const;
 
     bool is_fitted() const { return is_fitted_; }
+    int seq_len() const { return seq_len_; }
+    int pred_len() const { return pred_len_; }
+
+    /**
+     * Get total number of trainable parameters
+     */
+    size_t parameter_count() const;
 
     void save(const std::string& filename) const;
     void load(const std::string& filename);
@@ -205,6 +218,13 @@ public:
     std::vector<double> predict(const std::vector<double>& input) const;
 
     bool is_fitted() const { return is_fitted_; }
+    int seq_len() const { return seq_len_; }
+    int pred_len() const { return pred_len_; }
+
+    /**
+     * Get total number of trainable parameters
+     */
+    size_t parameter_count() const;
 
     void save(const std::string& filename) const;
     void load(const std::string& filename);

@@ -657,4 +657,212 @@ ForecastResult NeuralProphet::forecast(int steps) const {
     return result;
 }
 
+// ============================================================
+// Binary Serialization for Prophet
+// ============================================================
+
+constexpr uint32_t PROPHET_MAGIC = 0x50524F50;  // "PROP"
+constexpr uint32_t PROPHET_VERSION = 1;
+
+namespace {
+
+void write_vector(std::ofstream& file, const std::vector<double>& vec) {
+    uint32_t size = static_cast<uint32_t>(vec.size());
+    file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    file.write(reinterpret_cast<const char*>(vec.data()), size * sizeof(double));
+}
+
+void read_vector(std::ifstream& file, std::vector<double>& vec) {
+    uint32_t size;
+    file.read(reinterpret_cast<char*>(&size), sizeof(size));
+    vec.resize(size);
+    file.read(reinterpret_cast<char*>(vec.data()), size * sizeof(double));
+}
+
+void write_string(std::ofstream& file, const std::string& str) {
+    uint32_t size = static_cast<uint32_t>(str.size());
+    file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    file.write(str.data(), size);
+}
+
+void read_string(std::ifstream& file, std::string& str) {
+    uint32_t size;
+    file.read(reinterpret_cast<char*>(&size), sizeof(size));
+    str.resize(size);
+    file.read(&str[0], size);
+}
+
+} // anonymous namespace
+
+size_t Prophet::parameter_count() const {
+    size_t count = 2;  // k_, m_
+    count += delta_.size();  // changepoint deltas
+
+    // Seasonality coefficients
+    for (const auto& [name, coeffs] : seasonality_coeffs_) {
+        count += coeffs.size();
+    }
+
+    // Holiday coefficients
+    count += holiday_coeffs_.size();
+
+    return count;
+}
+
+void Prophet::save(const std::string& filename) const {
+    if (!fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    file.write(reinterpret_cast<const char*>(&PROPHET_MAGIC), sizeof(PROPHET_MAGIC));
+    file.write(reinterpret_cast<const char*>(&PROPHET_VERSION), sizeof(PROPHET_VERSION));
+
+    // Growth type
+    int gt = static_cast<int>(growth_type_);
+    file.write(reinterpret_cast<const char*>(&gt), sizeof(gt));
+
+    // Parameters
+    file.write(reinterpret_cast<const char*>(&cap_), sizeof(cap_));
+    file.write(reinterpret_cast<const char*>(&floor_), sizeof(floor_));
+    file.write(reinterpret_cast<const char*>(&yearly_seasonality_), sizeof(yearly_seasonality_));
+    file.write(reinterpret_cast<const char*>(&weekly_seasonality_), sizeof(weekly_seasonality_));
+    file.write(reinterpret_cast<const char*>(&daily_seasonality_), sizeof(daily_seasonality_));
+    file.write(reinterpret_cast<const char*>(&n_changepoints_), sizeof(n_changepoints_));
+    file.write(reinterpret_cast<const char*>(&changepoint_range_), sizeof(changepoint_range_));
+    file.write(reinterpret_cast<const char*>(&changepoint_prior_scale_), sizeof(changepoint_prior_scale_));
+
+    // Fitted parameters
+    file.write(reinterpret_cast<const char*>(&k_), sizeof(k_));
+    file.write(reinterpret_cast<const char*>(&m_), sizeof(m_));
+    file.write(reinterpret_cast<const char*>(&t_min_), sizeof(t_min_));
+    file.write(reinterpret_cast<const char*>(&t_max_), sizeof(t_max_));
+
+    write_vector(file, delta_);
+    write_vector(file, timestamps_);
+    write_vector(file, values_);
+
+    // Changepoints
+    uint32_t n_cp = static_cast<uint32_t>(changepoints_.size());
+    file.write(reinterpret_cast<const char*>(&n_cp), sizeof(n_cp));
+    for (const auto& cp : changepoints_) {
+        file.write(reinterpret_cast<const char*>(&cp.timestamp), sizeof(cp.timestamp));
+        file.write(reinterpret_cast<const char*>(&cp.rate_change), sizeof(cp.rate_change));
+    }
+
+    // Custom seasonalities
+    uint32_t n_custom = static_cast<uint32_t>(custom_seasonalities_.size());
+    file.write(reinterpret_cast<const char*>(&n_custom), sizeof(n_custom));
+    for (const auto& cs : custom_seasonalities_) {
+        write_string(file, cs.name);
+        file.write(reinterpret_cast<const char*>(&cs.period), sizeof(cs.period));
+        file.write(reinterpret_cast<const char*>(&cs.fourier_order), sizeof(cs.fourier_order));
+    }
+
+    // Seasonality coefficients
+    uint32_t n_seas = static_cast<uint32_t>(seasonality_coeffs_.size());
+    file.write(reinterpret_cast<const char*>(&n_seas), sizeof(n_seas));
+    for (const auto& [name, coeffs] : seasonality_coeffs_) {
+        write_string(file, name);
+        write_vector(file, coeffs);
+    }
+
+    // Holiday coefficients
+    uint32_t n_hol = static_cast<uint32_t>(holiday_coeffs_.size());
+    file.write(reinterpret_cast<const char*>(&n_hol), sizeof(n_hol));
+    for (const auto& [name, coeff] : holiday_coeffs_) {
+        write_string(file, name);
+        file.write(reinterpret_cast<const char*>(&coeff), sizeof(coeff));
+    }
+
+    file.close();
+}
+
+void Prophet::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != PROPHET_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a Prophet model file");
+    }
+
+    int gt;
+    file.read(reinterpret_cast<char*>(&gt), sizeof(gt));
+    growth_type_ = static_cast<GrowthType>(gt);
+
+    file.read(reinterpret_cast<char*>(&cap_), sizeof(cap_));
+    file.read(reinterpret_cast<char*>(&floor_), sizeof(floor_));
+    file.read(reinterpret_cast<char*>(&yearly_seasonality_), sizeof(yearly_seasonality_));
+    file.read(reinterpret_cast<char*>(&weekly_seasonality_), sizeof(weekly_seasonality_));
+    file.read(reinterpret_cast<char*>(&daily_seasonality_), sizeof(daily_seasonality_));
+    file.read(reinterpret_cast<char*>(&n_changepoints_), sizeof(n_changepoints_));
+    file.read(reinterpret_cast<char*>(&changepoint_range_), sizeof(changepoint_range_));
+    file.read(reinterpret_cast<char*>(&changepoint_prior_scale_), sizeof(changepoint_prior_scale_));
+
+    file.read(reinterpret_cast<char*>(&k_), sizeof(k_));
+    file.read(reinterpret_cast<char*>(&m_), sizeof(m_));
+    file.read(reinterpret_cast<char*>(&t_min_), sizeof(t_min_));
+    file.read(reinterpret_cast<char*>(&t_max_), sizeof(t_max_));
+
+    read_vector(file, delta_);
+    read_vector(file, timestamps_);
+    read_vector(file, values_);
+
+    // Changepoints
+    uint32_t n_cp;
+    file.read(reinterpret_cast<char*>(&n_cp), sizeof(n_cp));
+    changepoints_.resize(n_cp);
+    for (uint32_t i = 0; i < n_cp; ++i) {
+        file.read(reinterpret_cast<char*>(&changepoints_[i].timestamp), sizeof(double));
+        file.read(reinterpret_cast<char*>(&changepoints_[i].rate_change), sizeof(double));
+    }
+
+    // Custom seasonalities
+    uint32_t n_custom;
+    file.read(reinterpret_cast<char*>(&n_custom), sizeof(n_custom));
+    custom_seasonalities_.resize(n_custom);
+    for (uint32_t i = 0; i < n_custom; ++i) {
+        read_string(file, custom_seasonalities_[i].name);
+        file.read(reinterpret_cast<char*>(&custom_seasonalities_[i].period), sizeof(double));
+        file.read(reinterpret_cast<char*>(&custom_seasonalities_[i].fourier_order), sizeof(int));
+    }
+
+    // Seasonality coefficients
+    uint32_t n_seas;
+    file.read(reinterpret_cast<char*>(&n_seas), sizeof(n_seas));
+    seasonality_coeffs_.clear();
+    for (uint32_t i = 0; i < n_seas; ++i) {
+        std::string name;
+        std::vector<double> coeffs;
+        read_string(file, name);
+        read_vector(file, coeffs);
+        seasonality_coeffs_[name] = coeffs;
+    }
+
+    // Holiday coefficients
+    uint32_t n_hol;
+    file.read(reinterpret_cast<char*>(&n_hol), sizeof(n_hol));
+    holiday_coeffs_.clear();
+    for (uint32_t i = 0; i < n_hol; ++i) {
+        std::string name;
+        double coeff;
+        read_string(file, name);
+        file.read(reinterpret_cast<char*>(&coeff), sizeof(coeff));
+        holiday_coeffs_[name] = coeff;
+    }
+
+    fitted_ = true;
+    file.close();
+}
+
 } // namespace ts

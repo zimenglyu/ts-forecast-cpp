@@ -429,4 +429,120 @@ int AutoARIMA::determine_d(const std::vector<double>& data) const {
     return max_d_;
 }
 
+// ============================================================
+// Binary Serialization for ARIMA
+// ============================================================
+
+constexpr uint32_t ARIMA_MAGIC = 0x4152494D;  // "ARIM"
+constexpr uint32_t ARIMA_VERSION = 1;
+
+size_t ARIMA::parameter_count() const {
+    // phi (p) + theta (q) + c + sigma
+    return static_cast<size_t>(p_ + q_ + 2);
+}
+
+void ARIMA::save(const std::string& filename) const {
+    if (!fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    // Write header
+    file.write(reinterpret_cast<const char*>(&ARIMA_MAGIC), sizeof(ARIMA_MAGIC));
+    file.write(reinterpret_cast<const char*>(&ARIMA_VERSION), sizeof(ARIMA_VERSION));
+
+    // Write model orders
+    file.write(reinterpret_cast<const char*>(&p_), sizeof(p_));
+    file.write(reinterpret_cast<const char*>(&d_), sizeof(d_));
+    file.write(reinterpret_cast<const char*>(&q_), sizeof(q_));
+
+    // Write parameters
+    file.write(reinterpret_cast<const char*>(&c_), sizeof(c_));
+    file.write(reinterpret_cast<const char*>(&sigma_), sizeof(sigma_));
+
+    // Write phi coefficients
+    file.write(reinterpret_cast<const char*>(phi_.data()), p_ * sizeof(double));
+
+    // Write theta coefficients
+    file.write(reinterpret_cast<const char*>(theta_.data()), q_ * sizeof(double));
+
+    // Write data for forecasting
+    uint32_t data_size = static_cast<uint32_t>(data_.size());
+    file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
+    file.write(reinterpret_cast<const char*>(data_.data()), data_size * sizeof(double));
+
+    // Write diff_data
+    uint32_t diff_size = static_cast<uint32_t>(diff_data_.size());
+    file.write(reinterpret_cast<const char*>(&diff_size), sizeof(diff_size));
+    file.write(reinterpret_cast<const char*>(diff_data_.data()), diff_size * sizeof(double));
+
+    // Write residuals
+    uint32_t res_size = static_cast<uint32_t>(residuals_.size());
+    file.write(reinterpret_cast<const char*>(&res_size), sizeof(res_size));
+    file.write(reinterpret_cast<const char*>(residuals_.data()), res_size * sizeof(double));
+
+    file.close();
+}
+
+void ARIMA::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    // Read and validate header
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != ARIMA_MAGIC) {
+        throw std::runtime_error("Invalid file format: not an ARIMA model file");
+    }
+    if (version != ARIMA_VERSION) {
+        throw std::runtime_error("Unsupported model version");
+    }
+
+    // Read model orders
+    file.read(reinterpret_cast<char*>(&p_), sizeof(p_));
+    file.read(reinterpret_cast<char*>(&d_), sizeof(d_));
+    file.read(reinterpret_cast<char*>(&q_), sizeof(q_));
+
+    // Read parameters
+    file.read(reinterpret_cast<char*>(&c_), sizeof(c_));
+    file.read(reinterpret_cast<char*>(&sigma_), sizeof(sigma_));
+
+    // Read phi coefficients
+    phi_.resize(p_);
+    file.read(reinterpret_cast<char*>(phi_.data()), p_ * sizeof(double));
+
+    // Read theta coefficients
+    theta_.resize(q_);
+    file.read(reinterpret_cast<char*>(theta_.data()), q_ * sizeof(double));
+
+    // Read data
+    uint32_t data_size;
+    file.read(reinterpret_cast<char*>(&data_size), sizeof(data_size));
+    data_.resize(data_size);
+    file.read(reinterpret_cast<char*>(data_.data()), data_size * sizeof(double));
+
+    // Read diff_data
+    uint32_t diff_size;
+    file.read(reinterpret_cast<char*>(&diff_size), sizeof(diff_size));
+    diff_data_.resize(diff_size);
+    file.read(reinterpret_cast<char*>(diff_data_.data()), diff_size * sizeof(double));
+
+    // Read residuals
+    uint32_t res_size;
+    file.read(reinterpret_cast<char*>(&res_size), sizeof(res_size));
+    residuals_.resize(res_size);
+    file.read(reinterpret_cast<char*>(residuals_.data()), res_size * sizeof(double));
+
+    fitted_ = true;
+    file.close();
+}
+
 } // namespace ts

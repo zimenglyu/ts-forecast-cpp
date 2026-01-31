@@ -72,6 +72,13 @@ public:
     double aic() const;
     double bic() const;
 
+    // Parameter count
+    size_t parameter_count() const;
+
+    // Save/Load
+    void save(const std::string& filename) const;
+    void load(const std::string& filename);
+
 private:
     int p_, d_, q_;                    // Model orders
     std::vector<double> phi_;          // AR coefficients

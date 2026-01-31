@@ -62,6 +62,12 @@ target_link_libraries(normalize_etth1 ts_forecast)
 add_executable(normalize_datasets examples/normalize_datasets.cpp)
 target_link_libraries(normalize_datasets ts_forecast)
 
+add_executable(train_all_models examples/train_all_models.cpp)
+target_link_libraries(train_all_models ts_forecast)
+
+add_executable(evaluate_models examples/evaluate_models.cpp)
+target_link_libraries(evaluate_models ts_forecast)
+
 # Tests
 enable_testing()
 add_executable(run_tests tests/test_all.cpp)

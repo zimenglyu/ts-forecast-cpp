@@ -591,4 +591,217 @@ std::string ETS::model_type() const {
     return "ETS(" + error + "," + trend + "," + season + ")";
 }
 
+// ============================================================
+// Binary Serialization
+// ============================================================
+
+constexpr uint32_t SES_MAGIC = 0x53455300;     // "SES\0"
+constexpr uint32_t HOLT_MAGIC = 0x484F4C54;    // "HOLT"
+constexpr uint32_t HW_MAGIC = 0x48574E53;      // "HWNS"
+constexpr uint32_t ES_VERSION = 1;
+
+// Helper functions for binary I/O
+namespace {
+
+void write_vector(std::ofstream& file, const std::vector<double>& vec) {
+    uint32_t size = static_cast<uint32_t>(vec.size());
+    file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    file.write(reinterpret_cast<const char*>(vec.data()), size * sizeof(double));
+}
+
+void read_vector(std::ifstream& file, std::vector<double>& vec) {
+    uint32_t size;
+    file.read(reinterpret_cast<char*>(&size), sizeof(size));
+    vec.resize(size);
+    file.read(reinterpret_cast<char*>(vec.data()), size * sizeof(double));
+}
+
+} // anonymous namespace
+
+// SimpleExponentialSmoothing
+
+size_t SimpleExponentialSmoothing::parameter_count() const {
+    return 2;  // alpha + level
+}
+
+void SimpleExponentialSmoothing::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    file.write(reinterpret_cast<const char*>(&SES_MAGIC), sizeof(SES_MAGIC));
+    file.write(reinterpret_cast<const char*>(&ES_VERSION), sizeof(ES_VERSION));
+
+    file.write(reinterpret_cast<const char*>(&alpha_), sizeof(alpha_));
+    file.write(reinterpret_cast<const char*>(&level_), sizeof(level_));
+
+    write_vector(file, data_);
+    write_vector(file, fitted_vals_);
+
+    file.close();
+}
+
+void SimpleExponentialSmoothing::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != SES_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a SES model file");
+    }
+
+    file.read(reinterpret_cast<char*>(&alpha_), sizeof(alpha_));
+    file.read(reinterpret_cast<char*>(&level_), sizeof(level_));
+
+    read_vector(file, data_);
+    read_vector(file, fitted_vals_);
+
+    is_fitted_ = true;
+    file.close();
+}
+
+// HoltLinear
+
+size_t HoltLinear::parameter_count() const {
+    return damped_ ? 5 : 4;  // alpha, beta, level, trend, (phi if damped)
+}
+
+void HoltLinear::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    file.write(reinterpret_cast<const char*>(&HOLT_MAGIC), sizeof(HOLT_MAGIC));
+    file.write(reinterpret_cast<const char*>(&ES_VERSION), sizeof(ES_VERSION));
+
+    file.write(reinterpret_cast<const char*>(&alpha_), sizeof(alpha_));
+    file.write(reinterpret_cast<const char*>(&beta_), sizeof(beta_));
+    file.write(reinterpret_cast<const char*>(&level_), sizeof(level_));
+    file.write(reinterpret_cast<const char*>(&trend_), sizeof(trend_));
+    file.write(reinterpret_cast<const char*>(&damped_), sizeof(damped_));
+    file.write(reinterpret_cast<const char*>(&phi_), sizeof(phi_));
+
+    write_vector(file, data_);
+    write_vector(file, fitted_vals_);
+
+    file.close();
+}
+
+void HoltLinear::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != HOLT_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a HoltLinear model file");
+    }
+
+    file.read(reinterpret_cast<char*>(&alpha_), sizeof(alpha_));
+    file.read(reinterpret_cast<char*>(&beta_), sizeof(beta_));
+    file.read(reinterpret_cast<char*>(&level_), sizeof(level_));
+    file.read(reinterpret_cast<char*>(&trend_), sizeof(trend_));
+    file.read(reinterpret_cast<char*>(&damped_), sizeof(damped_));
+    file.read(reinterpret_cast<char*>(&phi_), sizeof(phi_));
+
+    read_vector(file, data_);
+    read_vector(file, fitted_vals_);
+
+    is_fitted_ = true;
+    file.close();
+}
+
+// HoltWinters
+
+size_t HoltWinters::parameter_count() const {
+    // alpha, beta, gamma, level, trend, seasonal[period], (phi if damped)
+    return static_cast<size_t>(5 + period_ + (damped_ ? 1 : 0));
+}
+
+void HoltWinters::save(const std::string& filename) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Cannot save unfitted model");
+    }
+
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for writing: " + filename);
+    }
+
+    file.write(reinterpret_cast<const char*>(&HW_MAGIC), sizeof(HW_MAGIC));
+    file.write(reinterpret_cast<const char*>(&ES_VERSION), sizeof(ES_VERSION));
+
+    file.write(reinterpret_cast<const char*>(&period_), sizeof(period_));
+    int st = static_cast<int>(seasonal_type_);
+    file.write(reinterpret_cast<const char*>(&st), sizeof(st));
+
+    file.write(reinterpret_cast<const char*>(&alpha_), sizeof(alpha_));
+    file.write(reinterpret_cast<const char*>(&beta_), sizeof(beta_));
+    file.write(reinterpret_cast<const char*>(&gamma_), sizeof(gamma_));
+    file.write(reinterpret_cast<const char*>(&level_), sizeof(level_));
+    file.write(reinterpret_cast<const char*>(&trend_), sizeof(trend_));
+    file.write(reinterpret_cast<const char*>(&damped_), sizeof(damped_));
+    file.write(reinterpret_cast<const char*>(&phi_), sizeof(phi_));
+
+    write_vector(file, seasonal_);
+    write_vector(file, data_);
+    write_vector(file, fitted_vals_);
+
+    file.close();
+}
+
+void HoltWinters::load(const std::string& filename) {
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open file for reading: " + filename);
+    }
+
+    uint32_t magic, version;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    if (magic != HW_MAGIC) {
+        throw std::runtime_error("Invalid file format: not a HoltWinters model file");
+    }
+
+    file.read(reinterpret_cast<char*>(&period_), sizeof(period_));
+    int st;
+    file.read(reinterpret_cast<char*>(&st), sizeof(st));
+    seasonal_type_ = static_cast<SeasonalType>(st);
+
+    file.read(reinterpret_cast<char*>(&alpha_), sizeof(alpha_));
+    file.read(reinterpret_cast<char*>(&beta_), sizeof(beta_));
+    file.read(reinterpret_cast<char*>(&gamma_), sizeof(gamma_));
+    file.read(reinterpret_cast<char*>(&level_), sizeof(level_));
+    file.read(reinterpret_cast<char*>(&trend_), sizeof(trend_));
+    file.read(reinterpret_cast<char*>(&damped_), sizeof(damped_));
+    file.read(reinterpret_cast<char*>(&phi_), sizeof(phi_));
+
+    read_vector(file, seasonal_);
+    read_vector(file, data_);
+    read_vector(file, fitted_vals_);
+
+    is_fitted_ = true;
+    file.close();
+}
+
 } // namespace ts

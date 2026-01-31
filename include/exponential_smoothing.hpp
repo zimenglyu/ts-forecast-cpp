@@ -27,6 +27,10 @@ public:
     double alpha() const { return alpha_; }
     bool is_fitted() const { return is_fitted_; }
 
+    size_t parameter_count() const;
+    void save(const std::string& filename) const;
+    void load(const std::string& filename);
+
 private:
     double alpha_;
     double level_;
@@ -64,6 +68,10 @@ public:
     double alpha() const { return alpha_; }
     double beta() const { return beta_; }
     bool is_fitted() const { return is_fitted_; }
+
+    size_t parameter_count() const;
+    void save(const std::string& filename) const;
+    void load(const std::string& filename);
 
 private:
     double alpha_, beta_;
@@ -120,6 +128,10 @@ public:
     double gamma() const { return gamma_; }
     int period() const { return period_; }
     bool is_fitted() const { return is_fitted_; }
+
+    size_t parameter_count() const;
+    void save(const std::string& filename) const;
+    void load(const std::string& filename);
 
 private:
     int period_;

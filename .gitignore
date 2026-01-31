@@ -24,3 +24,6 @@ Makefile
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Large datasets (exceeds GitHub 100MB limit)
+benchmark_datasets/traffic/

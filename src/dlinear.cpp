@@ -313,6 +313,15 @@ std::vector<double> DLinear::predict(const std::vector<std::vector<double>>& inp
     return predict(target_input);
 }
 
+size_t DLinear::parameter_count() const {
+    // Trend: W_trend (pred_len x input_dim) + b_trend (pred_len)
+    // Seasonal: W_seasonal (pred_len x input_dim) + b_seasonal (pred_len)
+    size_t input_dim = is_multivariate_ ? seq_len_ * n_features_ : seq_len_;
+    size_t trend_params = pred_len_ * input_dim + pred_len_;
+    size_t seasonal_params = pred_len_ * input_dim + pred_len_;
+    return trend_params + seasonal_params;
+}
+
 ForecastResult DLinear::forecast(int steps) const {
     if (!is_fitted_) {
         throw std::runtime_error("Model must be fitted before forecasting");
@@ -534,6 +543,11 @@ std::vector<double> NLinear::predict(const std::vector<double>& input) const {
     return pred;
 }
 
+size_t NLinear::parameter_count() const {
+    // W (pred_len x seq_len) + b (pred_len)
+    return static_cast<size_t>(pred_len_) * seq_len_ + pred_len_;
+}
+
 ForecastResult NLinear::forecast(int steps) const {
     if (!is_fitted_) {
         throw std::runtime_error("Model must be fitted before forecasting");
@@ -693,6 +707,11 @@ std::vector<double> Linear::predict(const std::vector<double>& input) const {
     }
 
     return pred;
+}
+
+size_t Linear::parameter_count() const {
+    // W (pred_len x seq_len) + b (pred_len)
+    return static_cast<size_t>(pred_len_) * seq_len_ + pred_len_;
 }
 
 ForecastResult Linear::forecast(int steps) const {

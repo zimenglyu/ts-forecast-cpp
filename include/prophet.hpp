@@ -134,6 +134,10 @@ public:
 
     bool is_fitted() const { return fitted_; }
 
+    size_t parameter_count() const;
+    void save(const std::string& filename) const;
+    void load(const std::string& filename);
+
 private:
     GrowthType growth_type_;
     double cap_, floor_;
