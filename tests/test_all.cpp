@@ -241,6 +241,158 @@ void test_train_test_split() {
     test_assert(test[0] == 80, "Test starts after train");
 }
 
+void test_train_val_test_split() {
+    std::cout << "\n=== Testing Train/Val/Test Split (70/15/15) ===" << std::endl;
+
+    // Test univariate split
+    std::vector<double> data(100);
+    for (int i = 0; i < 100; ++i) {
+        data[i] = static_cast<double>(i);
+    }
+
+    auto split = ts::train_val_test_split(data, 0.7, 0.15);
+
+    test_assert(split.train.size() == 70, "Train size (70%)");
+    test_assert(split.val.size() == 15, "Validation size (15%)");
+    test_assert(split.test.size() == 15, "Test size (15%)");
+    test_assert(split.train[0] == 0, "Train starts at 0");
+    test_assert(split.val[0] == 70, "Val starts at 70");
+    test_assert(split.test[0] == 85, "Test starts at 85");
+    test_assert(split.train.back() == 69, "Train ends at 69");
+    test_assert(split.test.back() == 99, "Test ends at 99");
+
+    // Test multivariate split
+    std::vector<std::vector<double>> mv_data(100);
+    for (int i = 0; i < 100; ++i) {
+        mv_data[i] = {static_cast<double>(i), static_cast<double>(i * 2)};
+    }
+
+    auto mv_split = ts::train_val_test_split(mv_data, 0.7, 0.15);
+
+    test_assert(mv_split.train.size() == 70, "Multivariate train size");
+    test_assert(mv_split.val.size() == 15, "Multivariate val size");
+    test_assert(mv_split.test.size() == 15, "Multivariate test size");
+    test_assert(mv_split.train[0][0] == 0, "Multivariate train starts correctly");
+    test_assert(mv_split.test[14][0] == 99, "Multivariate test ends correctly");
+
+    // Test different ratios (60/20/20)
+    auto split2 = ts::train_val_test_split(data, 0.6, 0.2);
+    test_assert(split2.train.size() == 60, "60/20/20 train size");
+    test_assert(split2.val.size() == 20, "60/20/20 val size");
+    test_assert(split2.test.size() == 20, "60/20/20 test size");
+}
+
+void test_minmax_scaler() {
+    std::cout << "\n=== Testing MinMax Scaler ===" << std::endl;
+
+    // Test univariate scaling
+    std::vector<double> data = {0, 25, 50, 75, 100};
+
+    ts::MinMaxScaler scaler;
+    scaler.fit(data);
+
+    test_assert(scaler.is_fitted(), "MinMax scaler fitted");
+    test_assert(scaler.min_val() == 0, "MinMax min value");
+    test_assert(scaler.max_val() == 100, "MinMax max value");
+
+    auto scaled = scaler.transform(data);
+    test_assert(std::abs(scaled[0] - 0.0) < 1e-10, "MinMax scaled min is 0");
+    test_assert(std::abs(scaled[4] - 1.0) < 1e-10, "MinMax scaled max is 1");
+    test_assert(std::abs(scaled[2] - 0.5) < 1e-10, "MinMax scaled middle is 0.5");
+
+    // Test inverse transform
+    auto restored = scaler.inverse_transform(scaled);
+    test_assert(std::abs(restored[0] - data[0]) < 1e-10, "MinMax inverse at 0");
+    test_assert(std::abs(restored[4] - data[4]) < 1e-10, "MinMax inverse at max");
+
+    // Test fit_transform
+    ts::MinMaxScaler scaler2;
+    auto scaled2 = scaler2.fit_transform(data);
+    test_assert(std::abs(scaled2[2] - 0.5) < 1e-10, "MinMax fit_transform");
+
+    // Test multivariate scaling
+    std::vector<std::vector<double>> mv_data = {
+        {0, 0},
+        {50, 100},
+        {100, 200}
+    };
+
+    ts::MinMaxScaler mv_scaler;
+    auto mv_scaled = mv_scaler.fit_transform(mv_data);
+
+    test_assert(std::abs(mv_scaled[0][0] - 0.0) < 1e-10, "MV MinMax col1 min");
+    test_assert(std::abs(mv_scaled[2][0] - 1.0) < 1e-10, "MV MinMax col1 max");
+    test_assert(std::abs(mv_scaled[0][1] - 0.0) < 1e-10, "MV MinMax col2 min");
+    test_assert(std::abs(mv_scaled[2][1] - 1.0) < 1e-10, "MV MinMax col2 max");
+
+    // Test inverse transform multivariate
+    auto mv_restored = mv_scaler.inverse_transform(mv_scaled);
+    test_assert(std::abs(mv_restored[1][0] - 50) < 1e-10, "MV MinMax inverse");
+    test_assert(std::abs(mv_restored[1][1] - 100) < 1e-10, "MV MinMax inverse col2");
+}
+
+void test_standard_scaler() {
+    std::cout << "\n=== Testing Standard Scaler ===" << std::endl;
+
+    // Test univariate standardization
+    std::vector<double> data = {10, 20, 30, 40, 50};
+
+    ts::StandardScaler scaler;
+    scaler.fit(data);
+
+    test_assert(scaler.is_fitted(), "Standard scaler fitted");
+    test_assert(std::abs(scaler.mean() - 30.0) < 1e-10, "Standard scaler mean");
+
+    auto scaled = scaler.transform(data);
+
+    // Check mean is ~0 and std is ~1
+    double scaled_mean = 0;
+    for (double x : scaled) scaled_mean += x;
+    scaled_mean /= scaled.size();
+    test_assert(std::abs(scaled_mean) < 1e-10, "Standardized mean is 0");
+
+    double scaled_var = 0;
+    for (double x : scaled) scaled_var += (x - scaled_mean) * (x - scaled_mean);
+    scaled_var /= (scaled.size() - 1);
+    test_assert(std::abs(scaled_var - 1.0) < 1e-10, "Standardized variance is 1");
+
+    // Test inverse transform
+    auto restored = scaler.inverse_transform(scaled);
+    for (size_t i = 0; i < data.size(); ++i) {
+        test_assert(std::abs(restored[i] - data[i]) < 1e-10,
+                    "Standard inverse transform at " + std::to_string(i));
+    }
+
+    // Test multivariate standardization
+    std::vector<std::vector<double>> mv_data = {
+        {10, 100},
+        {20, 200},
+        {30, 300},
+        {40, 400},
+        {50, 500}
+    };
+
+    ts::StandardScaler mv_scaler;
+    auto mv_scaled = mv_scaler.fit_transform(mv_data);
+
+    // Check each column has mean ~0
+    double col1_mean = 0, col2_mean = 0;
+    for (const auto& row : mv_scaled) {
+        col1_mean += row[0];
+        col2_mean += row[1];
+    }
+    col1_mean /= mv_scaled.size();
+    col2_mean /= mv_scaled.size();
+
+    test_assert(std::abs(col1_mean) < 1e-10, "MV Standard col1 mean is 0");
+    test_assert(std::abs(col2_mean) < 1e-10, "MV Standard col2 mean is 0");
+
+    // Test inverse transform
+    auto mv_restored = mv_scaler.inverse_transform(mv_scaled);
+    test_assert(std::abs(mv_restored[2][0] - 30) < 1e-10, "MV Standard inverse col1");
+    test_assert(std::abs(mv_restored[2][1] - 300) < 1e-10, "MV Standard inverse col2");
+}
+
 void test_acf_pacf() {
     std::cout << "\n=== Testing ACF/PACF ===" << std::endl;
 
@@ -272,6 +424,9 @@ int main() {
         test_gradient_boosting();
         test_evaluation();
         test_train_test_split();
+        test_train_val_test_split();
+        test_minmax_scaler();
+        test_standard_scaler();
         test_acf_pacf();
     } catch (const std::exception& e) {
         std::cout << "\n[ERROR] Exception: " << e.what() << std::endl;

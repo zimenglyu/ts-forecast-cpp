@@ -232,6 +232,260 @@ train_test_split(const std::vector<double>& data, double test_ratio) {
     return {train, test};
 }
 
+DataSplit<std::vector<double>>
+train_val_test_split(const std::vector<double>& data,
+                     double train_ratio,
+                     double val_ratio) {
+    if (train_ratio < 0 || val_ratio < 0 || train_ratio + val_ratio > 1.0) {
+        throw std::invalid_argument(
+            "train_ratio and val_ratio must be non-negative and sum to <= 1.0");
+    }
+
+    size_t n = data.size();
+    size_t train_end = static_cast<size_t>(n * train_ratio);
+    size_t val_end = static_cast<size_t>(n * (train_ratio + val_ratio));
+
+    DataSplit<std::vector<double>> split;
+    split.train = std::vector<double>(data.begin(), data.begin() + train_end);
+    split.val = std::vector<double>(data.begin() + train_end, data.begin() + val_end);
+    split.test = std::vector<double>(data.begin() + val_end, data.end());
+
+    return split;
+}
+
+DataSplit<std::vector<std::vector<double>>>
+train_val_test_split(const std::vector<std::vector<double>>& data,
+                     double train_ratio,
+                     double val_ratio) {
+    if (train_ratio < 0 || val_ratio < 0 || train_ratio + val_ratio > 1.0) {
+        throw std::invalid_argument(
+            "train_ratio and val_ratio must be non-negative and sum to <= 1.0");
+    }
+
+    size_t n = data.size();
+    size_t train_end = static_cast<size_t>(n * train_ratio);
+    size_t val_end = static_cast<size_t>(n * (train_ratio + val_ratio));
+
+    DataSplit<std::vector<std::vector<double>>> split;
+    split.train = std::vector<std::vector<double>>(data.begin(), data.begin() + train_end);
+    split.val = std::vector<std::vector<double>>(data.begin() + train_end, data.begin() + val_end);
+    split.test = std::vector<std::vector<double>>(data.begin() + val_end, data.end());
+
+    return split;
+}
+
+// MinMaxScaler implementation
+void MinMaxScaler::fit(const std::vector<double>& data) {
+    if (data.empty()) {
+        throw std::invalid_argument("Cannot fit on empty data");
+    }
+
+    double min_val = *std::min_element(data.begin(), data.end());
+    double max_val = *std::max_element(data.begin(), data.end());
+
+    min_vals_ = {min_val};
+    max_vals_ = {max_val};
+    is_fitted_ = true;
+}
+
+void MinMaxScaler::fit(const std::vector<std::vector<double>>& data) {
+    if (data.empty() || data[0].empty()) {
+        throw std::invalid_argument("Cannot fit on empty data");
+    }
+
+    size_t n_features = data[0].size();
+    min_vals_.resize(n_features);
+    max_vals_.resize(n_features);
+
+    for (size_t j = 0; j < n_features; ++j) {
+        double min_val = data[0][j];
+        double max_val = data[0][j];
+        for (size_t i = 1; i < data.size(); ++i) {
+            if (data[i][j] < min_val) min_val = data[i][j];
+            if (data[i][j] > max_val) max_val = data[i][j];
+        }
+        min_vals_[j] = min_val;
+        max_vals_[j] = max_val;
+    }
+    is_fitted_ = true;
+}
+
+std::vector<double> MinMaxScaler::transform(const std::vector<double>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<double> result(data.size());
+    double range = max_vals_[0] - min_vals_[0];
+    if (range < 1e-10) range = 1.0;  // Avoid division by zero
+
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i] = (data[i] - min_vals_[0]) / range;
+    }
+    return result;
+}
+
+std::vector<std::vector<double>> MinMaxScaler::transform(
+    const std::vector<std::vector<double>>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<std::vector<double>> result(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i].resize(data[i].size());
+        for (size_t j = 0; j < data[i].size(); ++j) {
+            double range = max_vals_[j] - min_vals_[j];
+            if (range < 1e-10) range = 1.0;
+            result[i][j] = (data[i][j] - min_vals_[j]) / range;
+        }
+    }
+    return result;
+}
+
+std::vector<double> MinMaxScaler::fit_transform(const std::vector<double>& data) {
+    fit(data);
+    return transform(data);
+}
+
+std::vector<std::vector<double>> MinMaxScaler::fit_transform(
+    const std::vector<std::vector<double>>& data) {
+    fit(data);
+    return transform(data);
+}
+
+std::vector<double> MinMaxScaler::inverse_transform(const std::vector<double>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<double> result(data.size());
+    double range = max_vals_[0] - min_vals_[0];
+
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i] = data[i] * range + min_vals_[0];
+    }
+    return result;
+}
+
+std::vector<std::vector<double>> MinMaxScaler::inverse_transform(
+    const std::vector<std::vector<double>>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<std::vector<double>> result(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i].resize(data[i].size());
+        for (size_t j = 0; j < data[i].size(); ++j) {
+            double range = max_vals_[j] - min_vals_[j];
+            result[i][j] = data[i][j] * range + min_vals_[j];
+        }
+    }
+    return result;
+}
+
+// StandardScaler implementation
+void StandardScaler::fit(const std::vector<double>& data) {
+    if (data.empty()) {
+        throw std::invalid_argument("Cannot fit on empty data");
+    }
+
+    means_ = {stats::mean(data)};
+    stds_ = {stats::std_dev(data)};
+    if (stds_[0] < 1e-10) stds_[0] = 1.0;  // Avoid division by zero
+    is_fitted_ = true;
+}
+
+void StandardScaler::fit(const std::vector<std::vector<double>>& data) {
+    if (data.empty() || data[0].empty()) {
+        throw std::invalid_argument("Cannot fit on empty data");
+    }
+
+    size_t n_features = data[0].size();
+    means_.resize(n_features);
+    stds_.resize(n_features);
+
+    for (size_t j = 0; j < n_features; ++j) {
+        // Extract column j
+        std::vector<double> column(data.size());
+        for (size_t i = 0; i < data.size(); ++i) {
+            column[i] = data[i][j];
+        }
+        means_[j] = stats::mean(column);
+        stds_[j] = stats::std_dev(column);
+        if (stds_[j] < 1e-10) stds_[j] = 1.0;
+    }
+    is_fitted_ = true;
+}
+
+std::vector<double> StandardScaler::transform(const std::vector<double>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<double> result(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i] = (data[i] - means_[0]) / stds_[0];
+    }
+    return result;
+}
+
+std::vector<std::vector<double>> StandardScaler::transform(
+    const std::vector<std::vector<double>>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<std::vector<double>> result(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i].resize(data[i].size());
+        for (size_t j = 0; j < data[i].size(); ++j) {
+            result[i][j] = (data[i][j] - means_[j]) / stds_[j];
+        }
+    }
+    return result;
+}
+
+std::vector<double> StandardScaler::fit_transform(const std::vector<double>& data) {
+    fit(data);
+    return transform(data);
+}
+
+std::vector<std::vector<double>> StandardScaler::fit_transform(
+    const std::vector<std::vector<double>>& data) {
+    fit(data);
+    return transform(data);
+}
+
+std::vector<double> StandardScaler::inverse_transform(const std::vector<double>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<double> result(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i] = data[i] * stds_[0] + means_[0];
+    }
+    return result;
+}
+
+std::vector<std::vector<double>> StandardScaler::inverse_transform(
+    const std::vector<std::vector<double>>& data) const {
+    if (!is_fitted_) {
+        throw std::runtime_error("Scaler not fitted. Call fit() first.");
+    }
+
+    std::vector<std::vector<double>> result(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+        result[i].resize(data[i].size());
+        for (size_t j = 0; j < data[i].size(); ++j) {
+            result[i][j] = data[i][j] * stds_[j] + means_[j];
+        }
+    }
+    return result;
+}
+
 namespace matrix {
 
 Matrix zeros(size_t rows, size_t cols) {
