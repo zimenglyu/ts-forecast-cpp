@@ -164,11 +164,11 @@ void train_univariate_models(const std::string& dataset_name,
 
     // DLinear
     try {
-        std::cout << "  Training DLinear(96,24)..." << std::flush;
+        std::cout << "  Training DLinear(96,1)..." << std::flush;
         auto start = std::chrono::high_resolution_clock::now();
 
         int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
-        int pred_len = 24;
+        int pred_len = 1;
 
         ts::DLinear dlinear(seq_len, pred_len, 25);
         dlinear.fit(train_data, 50, 0.001, 32);
@@ -193,11 +193,11 @@ void train_univariate_models(const std::string& dataset_name,
 
     // NLinear
     try {
-        std::cout << "  Training NLinear(96,24)..." << std::flush;
+        std::cout << "  Training NLinear(96,1)..." << std::flush;
         auto start = std::chrono::high_resolution_clock::now();
 
         int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
-        int pred_len = 24;
+        int pred_len = 1;
 
         ts::NLinear nlinear(seq_len, pred_len);
         nlinear.fit(train_data, 50, 0.001, 32);
@@ -222,11 +222,11 @@ void train_univariate_models(const std::string& dataset_name,
 
     // Linear
     try {
-        std::cout << "  Training Linear(96,24)..." << std::flush;
+        std::cout << "  Training Linear(96,1)..." << std::flush;
         auto start = std::chrono::high_resolution_clock::now();
 
         int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
-        int pred_len = 24;
+        int pred_len = 1;
 
         ts::Linear linear(seq_len, pred_len);
         linear.fit(train_data, 50, 0.001, 32);
@@ -259,11 +259,11 @@ void train_multivariate_dlinear(const std::string& dataset_name,
     std::cout << "Features: " << train_data[0].size() << ", Target idx: " << target_idx << std::endl;
 
     try {
-        std::cout << "  Training DLinear Multivariate..." << std::flush;
+        std::cout << "  Training DLinear Multivariate (96,1)..." << std::flush;
         auto start = std::chrono::high_resolution_clock::now();
 
-        int seq_len = std::min(48, static_cast<int>(train_data.size()) / 4);
-        int pred_len = 24;
+        int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
+        int pred_len = 1;
 
         ts::DLinear dlinear(seq_len, pred_len, 13, false);
         dlinear.fit(train_data, target_idx, 50, 0.001, 32);

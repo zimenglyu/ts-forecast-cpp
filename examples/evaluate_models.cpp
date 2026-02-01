@@ -66,6 +66,51 @@ void print_result(const EvalResult& r) {
               << std::endl;
 }
 
+// Evaluate Naive baseline - predict next value = last observed value
+EvalResult evaluate_naive(const std::vector<double>& test_data,
+                          const std::string& dataset_name) {
+    EvalResult result;
+    result.dataset = dataset_name;
+    result.model_name = "Naive";
+    result.is_multivariate = false;
+    result.test_data_points = static_cast<int>(test_data.size());
+    result.param_count = 0;  // No parameters
+
+    int n_predictions = static_cast<int>(test_data.size()) - 1;
+    if (n_predictions <= 0) {
+        result.mse = result.mae = 0;
+        result.total_inference_s = 0;
+        result.latency_per_point_s = 0;
+        result.throughput = 0;
+        return result;
+    }
+
+    // Timed inference - predict next value = last value
+    std::vector<double> predictions(n_predictions);
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < n_predictions; ++i) {
+        predictions[i] = test_data[i];  // Predict next = current
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+
+    // Compute metrics
+    double total_mse = 0.0, total_mae = 0.0;
+    for (int i = 0; i < n_predictions; ++i) {
+        double actual = test_data[i + 1];
+        double error = predictions[i] - actual;
+        total_mse += error * error;
+        total_mae += std::abs(error);
+    }
+
+    result.mse = total_mse / n_predictions;
+    result.mae = total_mae / n_predictions;
+    result.total_inference_s = std::chrono::duration<double>(end - start).count();
+    result.latency_per_point_s = result.total_inference_s / n_predictions;
+    result.throughput = n_predictions / result.total_inference_s;
+
+    return result;
+}
+
 // Evaluate ARIMA - single step forecast
 EvalResult evaluate_arima(const std::string& model_path,
                           const std::vector<double>& test_data,
@@ -445,6 +490,13 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
     auto test_data = load_univariate(test_path);
 
     std::cout << "\n--- " << name << " (test rows: " << test_data.size() << ") ---" << std::endl;
+
+    // Naive baseline (always evaluate first as reference)
+    {
+        auto result = evaluate_naive(test_data, name);
+        univariate_results.push_back(result);
+        print_result(result);
+    }
 
     // ARIMA
     std::string arima_path = models_dir + "/" + name + "_arima.bin";
