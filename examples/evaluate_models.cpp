@@ -17,13 +17,10 @@ struct EvalResult {
     double mse;
     double mae;
     size_t param_count;
-    int dataset_length;           // Total test data length
-    int test_samples;             // Number of prediction windows
-    double total_inference_ms;    // Total inference time for all samples
-    double per_sample_latency_ms; // Latency per sample (ms)
-    double per_point_latency_us;  // Latency per data point (microseconds)
-    double throughput_samples;    // Samples per second
-    double throughput_points;     // Data points per second
+    int test_data_points;          // Total rows in test data
+    double total_inference_ms;     // Total inference time
+    double latency_per_point_us;   // Latency per data point (microseconds)
+    double throughput_points_per_s; // Data points per second
     bool is_multivariate;
 };
 
@@ -43,18 +40,15 @@ void print_header() {
               << std::setw(12) << "Dataset"
               << std::setw(14) << "Model"
               << std::right
-              << std::setw(11) << "MSE"
-              << std::setw(10) << "MAE"
+              << std::setw(12) << "MSE"
+              << std::setw(11) << "MAE"
               << std::setw(8) << "Params"
-              << std::setw(8) << "DataLen"
-              << std::setw(9) << "Samples"
-              << std::setw(11) << "Total(ms)"
-              << std::setw(11) << "Per-Smp(ms)"
-              << std::setw(11) << "Per-Pt(us)"
-              << std::setw(12) << "Tput(smp/s)"
-              << std::setw(12) << "Tput(pt/s)"
+              << std::setw(10) << "TestRows"
+              << std::setw(12) << "Total(ms)"
+              << std::setw(12) << "Latency(us)"
+              << std::setw(14) << "Throughput"
               << std::endl;
-    std::cout << std::string(130, '-') << std::endl;
+    std::cout << std::string(105, '-') << std::endl;
 }
 
 void print_result(const EvalResult& r) {
@@ -62,185 +56,193 @@ void print_result(const EvalResult& r) {
               << std::setw(12) << r.dataset
               << std::setw(14) << r.model_name
               << std::right << std::fixed
-              << std::setprecision(6) << std::setw(11) << r.mse
-              << std::setprecision(6) << std::setw(10) << r.mae
+              << std::setprecision(6) << std::setw(12) << r.mse
+              << std::setprecision(6) << std::setw(11) << r.mae
               << std::setw(8) << r.param_count
-              << std::setw(8) << r.dataset_length
-              << std::setw(9) << r.test_samples
-              << std::setprecision(4) << std::setw(11) << r.total_inference_ms
-              << std::setprecision(4) << std::setw(11) << r.per_sample_latency_ms
-              << std::setprecision(2) << std::setw(11) << r.per_point_latency_us
-              << std::setprecision(2) << std::setw(12) << r.throughput_samples
-              << std::setprecision(2) << std::setw(12) << r.throughput_points
+              << std::setw(10) << r.test_data_points
+              << std::setprecision(4) << std::setw(12) << r.total_inference_ms
+              << std::setprecision(2) << std::setw(12) << r.latency_per_point_us
+              << std::setprecision(2) << std::setw(14) << r.throughput_points_per_s
               << std::endl;
 }
 
-// Evaluate ARIMA model (single forecast from trained state)
+// Evaluate ARIMA - single step forecast
 EvalResult evaluate_arima(const std::string& model_path,
                           const std::vector<double>& test_data,
-                          const std::string& dataset_name,
-                          int pred_len) {
+                          const std::string& dataset_name) {
     EvalResult result;
     result.dataset = dataset_name;
     result.model_name = "ARIMA";
     result.is_multivariate = false;
-    result.dataset_length = static_cast<int>(test_data.size());
+    result.test_data_points = static_cast<int>(test_data.size());
 
     ts::ARIMA model;
     model.load(model_path);
     result.param_count = model.parameter_count();
 
-    // Warm-up run
-    model.forecast(pred_len);
+    int n_points = static_cast<int>(test_data.size());
 
-    // Timed run
+    // Warm-up
+    model.forecast(1);
+
+    // Predict 1 point at a time (ARIMA forecasts from trained state)
+    double total_mse = 0.0, total_mae = 0.0;
+
     auto start = std::chrono::high_resolution_clock::now();
-    auto forecast = model.forecast(pred_len);
+    for (int i = 0; i < n_points; ++i) {
+        auto forecast = model.forecast(1);
+        // Note: ARIMA always predicts from end of training, so we compare to first test point
+        // This is a limitation of classical models for streaming
+    }
     auto end = std::chrono::high_resolution_clock::now();
 
-    double total_mse = 0.0, total_mae = 0.0;
-    for (int j = 0; j < pred_len; ++j) {
-        double error = forecast.predictions[j] - test_data[j];
+    // For accuracy, use single forecast comparison
+    auto forecast = model.forecast(n_points);
+    for (int i = 0; i < n_points && i < static_cast<int>(forecast.predictions.size()); ++i) {
+        double error = forecast.predictions[i] - test_data[i];
         total_mse += error * error;
         total_mae += std::abs(error);
     }
 
-    result.test_samples = 1;
-    result.mse = total_mse / pred_len;
-    result.mae = total_mae / pred_len;
+    result.mse = total_mse / n_points;
+    result.mae = total_mae / n_points;
     result.total_inference_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    result.per_sample_latency_ms = result.total_inference_ms;
-    result.per_point_latency_us = (result.total_inference_ms * 1000.0) / pred_len;
-    result.throughput_samples = 1.0 / (result.total_inference_ms / 1000.0);
-    result.throughput_points = pred_len / (result.total_inference_ms / 1000.0);
+    result.latency_per_point_us = (result.total_inference_ms * 1000.0) / n_points;
+    result.throughput_points_per_s = n_points / (result.total_inference_ms / 1000.0);
 
     return result;
 }
 
-// Evaluate SES model
+// Evaluate SES - single step forecast
 EvalResult evaluate_ses(const std::string& model_path,
                         const std::vector<double>& test_data,
-                        const std::string& dataset_name,
-                        int pred_len) {
+                        const std::string& dataset_name) {
     EvalResult result;
     result.dataset = dataset_name;
     result.model_name = "SES";
     result.is_multivariate = false;
-    result.dataset_length = static_cast<int>(test_data.size());
+    result.test_data_points = static_cast<int>(test_data.size());
 
     ts::SimpleExponentialSmoothing model;
     model.load(model_path);
     result.param_count = model.parameter_count();
 
+    int n_points = static_cast<int>(test_data.size());
+
     // Warm-up
-    model.forecast(pred_len);
+    model.forecast(1);
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto forecast = model.forecast(pred_len);
+    for (int i = 0; i < n_points; ++i) {
+        auto forecast = model.forecast(1);
+    }
     auto end = std::chrono::high_resolution_clock::now();
 
+    // For accuracy
+    auto forecast = model.forecast(n_points);
     double total_mse = 0.0, total_mae = 0.0;
-    for (int j = 0; j < pred_len; ++j) {
-        double error = forecast.predictions[j] - test_data[j];
+    for (int i = 0; i < n_points && i < static_cast<int>(forecast.predictions.size()); ++i) {
+        double error = forecast.predictions[i] - test_data[i];
         total_mse += error * error;
         total_mae += std::abs(error);
     }
 
-    result.test_samples = 1;
-    result.mse = total_mse / pred_len;
-    result.mae = total_mae / pred_len;
+    result.mse = total_mse / n_points;
+    result.mae = total_mae / n_points;
     result.total_inference_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    result.per_sample_latency_ms = result.total_inference_ms;
-    result.per_point_latency_us = (result.total_inference_ms * 1000.0) / pred_len;
-    result.throughput_samples = 1.0 / (result.total_inference_ms / 1000.0);
-    result.throughput_points = pred_len / (result.total_inference_ms / 1000.0);
+    result.latency_per_point_us = (result.total_inference_ms * 1000.0) / n_points;
+    result.throughput_points_per_s = n_points / (result.total_inference_ms / 1000.0);
 
     return result;
 }
 
-// Evaluate HoltWinters model
+// Evaluate HoltWinters - single step forecast
 EvalResult evaluate_holtwinters(const std::string& model_path,
                                 const std::vector<double>& test_data,
-                                const std::string& dataset_name,
-                                int pred_len) {
+                                const std::string& dataset_name) {
     EvalResult result;
     result.dataset = dataset_name;
     result.model_name = "HoltWinters";
     result.is_multivariate = false;
-    result.dataset_length = static_cast<int>(test_data.size());
+    result.test_data_points = static_cast<int>(test_data.size());
 
     ts::HoltWinters model(24);
     model.load(model_path);
     result.param_count = model.parameter_count();
 
+    int n_points = static_cast<int>(test_data.size());
+
     // Warm-up
-    model.forecast(pred_len);
+    model.forecast(1);
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto forecast = model.forecast(pred_len);
+    for (int i = 0; i < n_points; ++i) {
+        auto forecast = model.forecast(1);
+    }
     auto end = std::chrono::high_resolution_clock::now();
 
+    // For accuracy
+    auto forecast = model.forecast(n_points);
     double total_mse = 0.0, total_mae = 0.0;
-    for (int j = 0; j < pred_len; ++j) {
-        double error = forecast.predictions[j] - test_data[j];
+    for (int i = 0; i < n_points && i < static_cast<int>(forecast.predictions.size()); ++i) {
+        double error = forecast.predictions[i] - test_data[i];
         total_mse += error * error;
         total_mae += std::abs(error);
     }
 
-    result.test_samples = 1;
-    result.mse = total_mse / pred_len;
-    result.mae = total_mae / pred_len;
+    result.mse = total_mse / n_points;
+    result.mae = total_mae / n_points;
     result.total_inference_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    result.per_sample_latency_ms = result.total_inference_ms;
-    result.per_point_latency_us = (result.total_inference_ms * 1000.0) / pred_len;
-    result.throughput_samples = 1.0 / (result.total_inference_ms / 1000.0);
-    result.throughput_points = pred_len / (result.total_inference_ms / 1000.0);
+    result.latency_per_point_us = (result.total_inference_ms * 1000.0) / n_points;
+    result.throughput_points_per_s = n_points / (result.total_inference_ms / 1000.0);
 
     return result;
 }
 
-// Evaluate Prophet model
+// Evaluate Prophet - single step forecast
 EvalResult evaluate_prophet(const std::string& model_path,
                             const std::vector<double>& test_data,
-                            const std::string& dataset_name,
-                            int pred_len) {
+                            const std::string& dataset_name) {
     EvalResult result;
     result.dataset = dataset_name;
     result.model_name = "Prophet";
     result.is_multivariate = false;
-    result.dataset_length = static_cast<int>(test_data.size());
+    result.test_data_points = static_cast<int>(test_data.size());
 
     ts::Prophet model;
     model.load(model_path);
     result.param_count = model.parameter_count();
 
+    int n_points = static_cast<int>(test_data.size());
+
     // Warm-up
-    model.forecast(pred_len);
+    model.forecast(1);
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto forecast = model.forecast(pred_len);
+    for (int i = 0; i < n_points; ++i) {
+        auto forecast = model.forecast(1);
+    }
     auto end = std::chrono::high_resolution_clock::now();
 
+    // For accuracy
+    auto forecast = model.forecast(n_points);
     double total_mse = 0.0, total_mae = 0.0;
-    for (int j = 0; j < pred_len; ++j) {
-        double error = forecast.predictions[j] - test_data[j];
+    for (int i = 0; i < n_points && i < static_cast<int>(forecast.predictions.size()); ++i) {
+        double error = forecast.predictions[i] - test_data[i];
         total_mse += error * error;
         total_mae += std::abs(error);
     }
 
-    result.test_samples = 1;
-    result.mse = total_mse / pred_len;
-    result.mae = total_mae / pred_len;
+    result.mse = total_mse / n_points;
+    result.mae = total_mae / n_points;
     result.total_inference_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    result.per_sample_latency_ms = result.total_inference_ms;
-    result.per_point_latency_us = (result.total_inference_ms * 1000.0) / pred_len;
-    result.throughput_samples = 1.0 / (result.total_inference_ms / 1000.0);
-    result.throughput_points = pred_len / (result.total_inference_ms / 1000.0);
+    result.latency_per_point_us = (result.total_inference_ms * 1000.0) / n_points;
+    result.throughput_points_per_s = n_points / (result.total_inference_ms / 1000.0);
 
     return result;
 }
 
-// Evaluate DLinear model (sliding window over test set)
+// Evaluate DLinear - streaming: predict 1 point at a time with sliding window
 EvalResult evaluate_dlinear(const std::string& model_path,
                             const std::vector<double>& test_data,
                             const std::string& dataset_name,
@@ -250,72 +252,62 @@ EvalResult evaluate_dlinear(const std::string& model_path,
     result.dataset = dataset_name;
     result.model_name = model_name;
     result.is_multivariate = is_multivariate;
-    result.dataset_length = static_cast<int>(test_data.size());
+    result.test_data_points = static_cast<int>(test_data.size());
 
     ts::DLinear model;
     model.load(model_path);
-
     result.param_count = model.parameter_count();
 
     int seq_len = model.seq_len();
-    int pred_len = model.pred_len();
 
-    int n_samples = static_cast<int>(test_data.size()) - seq_len - pred_len + 1;
-    if (n_samples <= 0) {
+    // Number of points we can predict (need seq_len history + 1 target)
+    int n_predictions = static_cast<int>(test_data.size()) - seq_len;
+    if (n_predictions <= 0) {
         result.mse = result.mae = 0;
-        result.total_inference_ms = result.per_sample_latency_ms = 0;
-        result.per_point_latency_us = 0;
-        result.throughput_samples = result.throughput_points = 0;
-        result.test_samples = 0;
+        result.total_inference_ms = 0;
+        result.latency_per_point_us = 0;
+        result.throughput_points_per_s = 0;
         return result;
     }
 
-    result.test_samples = n_samples;
-
-    // Warm-up run
+    // Warm-up
     std::vector<double> warmup_input(test_data.begin(), test_data.begin() + seq_len);
     model.predict(warmup_input);
 
-    // Collect all inputs first (outside timing)
-    std::vector<std::vector<double>> inputs(n_samples);
-    std::vector<std::vector<double>> actuals(n_samples);
-    for (int i = 0; i < n_samples; ++i) {
+    // Prepare inputs outside timing
+    std::vector<std::vector<double>> inputs(n_predictions);
+    for (int i = 0; i < n_predictions; ++i) {
         inputs[i] = std::vector<double>(test_data.begin() + i, test_data.begin() + i + seq_len);
-        actuals[i] = std::vector<double>(test_data.begin() + i + seq_len,
-                                         test_data.begin() + i + seq_len + pred_len);
     }
 
-    // Timed inference only
-    std::vector<std::vector<double>> predictions(n_samples);
+    // Timed inference - predict 1 point at a time
+    std::vector<double> predictions(n_predictions);
     auto start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < n_samples; ++i) {
-        predictions[i] = model.predict(inputs[i]);
+    for (int i = 0; i < n_predictions; ++i) {
+        auto pred = model.predict(inputs[i]);
+        predictions[i] = pred[0];  // Take only first predicted point (streaming)
     }
     auto end = std::chrono::high_resolution_clock::now();
 
-    // Compute metrics (outside timing)
+    // Compute metrics
     double total_mse = 0.0, total_mae = 0.0;
-    for (int i = 0; i < n_samples; ++i) {
-        for (int j = 0; j < pred_len; ++j) {
-            double error = predictions[i][j] - actuals[i][j];
-            total_mse += error * error;
-            total_mae += std::abs(error);
-        }
+    for (int i = 0; i < n_predictions; ++i) {
+        double actual = test_data[seq_len + i];
+        double error = predictions[i] - actual;
+        total_mse += error * error;
+        total_mae += std::abs(error);
     }
 
-    int total_predictions = n_samples * pred_len;
-    result.mse = total_mse / total_predictions;
-    result.mae = total_mae / total_predictions;
+    result.mse = total_mse / n_predictions;
+    result.mae = total_mae / n_predictions;
     result.total_inference_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    result.per_sample_latency_ms = result.total_inference_ms / n_samples;
-    result.per_point_latency_us = (result.total_inference_ms * 1000.0) / total_predictions;
-    result.throughput_samples = n_samples / (result.total_inference_ms / 1000.0);
-    result.throughput_points = total_predictions / (result.total_inference_ms / 1000.0);
+    result.latency_per_point_us = (result.total_inference_ms * 1000.0) / n_predictions;
+    result.throughput_points_per_s = n_predictions / (result.total_inference_ms / 1000.0);
 
     return result;
 }
 
-// Evaluate NLinear model
+// Evaluate NLinear - streaming
 EvalResult evaluate_nlinear(const std::string& model_path,
                             const std::vector<double>& test_data,
                             const std::string& dataset_name) {
@@ -323,72 +315,61 @@ EvalResult evaluate_nlinear(const std::string& model_path,
     result.dataset = dataset_name;
     result.model_name = "NLinear";
     result.is_multivariate = false;
-    result.dataset_length = static_cast<int>(test_data.size());
+    result.test_data_points = static_cast<int>(test_data.size());
 
     ts::NLinear model;
     model.load(model_path);
-
     result.param_count = model.parameter_count();
 
     int seq_len = model.seq_len();
-    int pred_len = model.pred_len();
+    int n_predictions = static_cast<int>(test_data.size()) - seq_len;
 
-    int n_samples = static_cast<int>(test_data.size()) - seq_len - pred_len + 1;
-    if (n_samples <= 0) {
+    if (n_predictions <= 0) {
         result.mse = result.mae = 0;
-        result.total_inference_ms = result.per_sample_latency_ms = 0;
-        result.per_point_latency_us = 0;
-        result.throughput_samples = result.throughput_points = 0;
-        result.test_samples = 0;
+        result.total_inference_ms = 0;
+        result.latency_per_point_us = 0;
+        result.throughput_points_per_s = 0;
         return result;
     }
-
-    result.test_samples = n_samples;
 
     // Warm-up
     std::vector<double> warmup_input(test_data.begin(), test_data.begin() + seq_len);
     model.predict(warmup_input);
 
-    // Prepare data outside timing
-    std::vector<std::vector<double>> inputs(n_samples);
-    std::vector<std::vector<double>> actuals(n_samples);
-    for (int i = 0; i < n_samples; ++i) {
+    // Prepare inputs
+    std::vector<std::vector<double>> inputs(n_predictions);
+    for (int i = 0; i < n_predictions; ++i) {
         inputs[i] = std::vector<double>(test_data.begin() + i, test_data.begin() + i + seq_len);
-        actuals[i] = std::vector<double>(test_data.begin() + i + seq_len,
-                                         test_data.begin() + i + seq_len + pred_len);
     }
 
     // Timed inference
-    std::vector<std::vector<double>> predictions(n_samples);
+    std::vector<double> predictions(n_predictions);
     auto start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < n_samples; ++i) {
-        predictions[i] = model.predict(inputs[i]);
+    for (int i = 0; i < n_predictions; ++i) {
+        auto pred = model.predict(inputs[i]);
+        predictions[i] = pred[0];
     }
     auto end = std::chrono::high_resolution_clock::now();
 
-    // Compute metrics outside timing
+    // Metrics
     double total_mse = 0.0, total_mae = 0.0;
-    for (int i = 0; i < n_samples; ++i) {
-        for (int j = 0; j < pred_len; ++j) {
-            double error = predictions[i][j] - actuals[i][j];
-            total_mse += error * error;
-            total_mae += std::abs(error);
-        }
+    for (int i = 0; i < n_predictions; ++i) {
+        double actual = test_data[seq_len + i];
+        double error = predictions[i] - actual;
+        total_mse += error * error;
+        total_mae += std::abs(error);
     }
 
-    int total_predictions = n_samples * pred_len;
-    result.mse = total_mse / total_predictions;
-    result.mae = total_mae / total_predictions;
+    result.mse = total_mse / n_predictions;
+    result.mae = total_mae / n_predictions;
     result.total_inference_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    result.per_sample_latency_ms = result.total_inference_ms / n_samples;
-    result.per_point_latency_us = (result.total_inference_ms * 1000.0) / total_predictions;
-    result.throughput_samples = n_samples / (result.total_inference_ms / 1000.0);
-    result.throughput_points = total_predictions / (result.total_inference_ms / 1000.0);
+    result.latency_per_point_us = (result.total_inference_ms * 1000.0) / n_predictions;
+    result.throughput_points_per_s = n_predictions / (result.total_inference_ms / 1000.0);
 
     return result;
 }
 
-// Evaluate Linear model
+// Evaluate Linear - streaming
 EvalResult evaluate_linear(const std::string& model_path,
                            const std::vector<double>& test_data,
                            const std::string& dataset_name) {
@@ -396,67 +377,56 @@ EvalResult evaluate_linear(const std::string& model_path,
     result.dataset = dataset_name;
     result.model_name = "Linear";
     result.is_multivariate = false;
-    result.dataset_length = static_cast<int>(test_data.size());
+    result.test_data_points = static_cast<int>(test_data.size());
 
     ts::Linear model;
     model.load(model_path);
-
     result.param_count = model.parameter_count();
 
     int seq_len = model.seq_len();
-    int pred_len = model.pred_len();
+    int n_predictions = static_cast<int>(test_data.size()) - seq_len;
 
-    int n_samples = static_cast<int>(test_data.size()) - seq_len - pred_len + 1;
-    if (n_samples <= 0) {
+    if (n_predictions <= 0) {
         result.mse = result.mae = 0;
-        result.total_inference_ms = result.per_sample_latency_ms = 0;
-        result.per_point_latency_us = 0;
-        result.throughput_samples = result.throughput_points = 0;
-        result.test_samples = 0;
+        result.total_inference_ms = 0;
+        result.latency_per_point_us = 0;
+        result.throughput_points_per_s = 0;
         return result;
     }
-
-    result.test_samples = n_samples;
 
     // Warm-up
     std::vector<double> warmup_input(test_data.begin(), test_data.begin() + seq_len);
     model.predict(warmup_input);
 
-    // Prepare data outside timing
-    std::vector<std::vector<double>> inputs(n_samples);
-    std::vector<std::vector<double>> actuals(n_samples);
-    for (int i = 0; i < n_samples; ++i) {
+    // Prepare inputs
+    std::vector<std::vector<double>> inputs(n_predictions);
+    for (int i = 0; i < n_predictions; ++i) {
         inputs[i] = std::vector<double>(test_data.begin() + i, test_data.begin() + i + seq_len);
-        actuals[i] = std::vector<double>(test_data.begin() + i + seq_len,
-                                         test_data.begin() + i + seq_len + pred_len);
     }
 
     // Timed inference
-    std::vector<std::vector<double>> predictions(n_samples);
+    std::vector<double> predictions(n_predictions);
     auto start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < n_samples; ++i) {
-        predictions[i] = model.predict(inputs[i]);
+    for (int i = 0; i < n_predictions; ++i) {
+        auto pred = model.predict(inputs[i]);
+        predictions[i] = pred[0];
     }
     auto end = std::chrono::high_resolution_clock::now();
 
-    // Compute metrics outside timing
+    // Metrics
     double total_mse = 0.0, total_mae = 0.0;
-    for (int i = 0; i < n_samples; ++i) {
-        for (int j = 0; j < pred_len; ++j) {
-            double error = predictions[i][j] - actuals[i][j];
-            total_mse += error * error;
-            total_mae += std::abs(error);
-        }
+    for (int i = 0; i < n_predictions; ++i) {
+        double actual = test_data[seq_len + i];
+        double error = predictions[i] - actual;
+        total_mse += error * error;
+        total_mae += std::abs(error);
     }
 
-    int total_predictions = n_samples * pred_len;
-    result.mse = total_mse / total_predictions;
-    result.mae = total_mae / total_predictions;
+    result.mse = total_mse / n_predictions;
+    result.mae = total_mae / n_predictions;
     result.total_inference_ms = std::chrono::duration<double, std::milli>(end - start).count();
-    result.per_sample_latency_ms = result.total_inference_ms / n_samples;
-    result.per_point_latency_us = (result.total_inference_ms * 1000.0) / total_predictions;
-    result.throughput_samples = n_samples / (result.total_inference_ms / 1000.0);
-    result.throughput_points = total_predictions / (result.total_inference_ms / 1000.0);
+    result.latency_per_point_us = (result.total_inference_ms * 1000.0) / n_predictions;
+    result.throughput_points_per_s = n_predictions / (result.total_inference_ms / 1000.0);
 
     return result;
 }
@@ -473,14 +443,13 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
     }
 
     auto test_data = load_univariate(test_path);
-    int pred_len = 24;
 
-    std::cout << "\n--- " << name << " (test length: " << test_data.size() << ") ---" << std::endl;
+    std::cout << "\n--- " << name << " (test rows: " << test_data.size() << ") ---" << std::endl;
 
     // ARIMA
     std::string arima_path = models_dir + "/" + name + "_arima.bin";
     if (fs::exists(arima_path)) {
-        auto result = evaluate_arima(arima_path, test_data, name, pred_len);
+        auto result = evaluate_arima(arima_path, test_data, name);
         univariate_results.push_back(result);
         print_result(result);
     }
@@ -488,7 +457,7 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
     // SES
     std::string ses_path = models_dir + "/" + name + "_ses.bin";
     if (fs::exists(ses_path)) {
-        auto result = evaluate_ses(ses_path, test_data, name, pred_len);
+        auto result = evaluate_ses(ses_path, test_data, name);
         univariate_results.push_back(result);
         print_result(result);
     }
@@ -496,7 +465,7 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
     // HoltWinters
     std::string hw_path = models_dir + "/" + name + "_holtwinters.bin";
     if (fs::exists(hw_path)) {
-        auto result = evaluate_holtwinters(hw_path, test_data, name, pred_len);
+        auto result = evaluate_holtwinters(hw_path, test_data, name);
         univariate_results.push_back(result);
         print_result(result);
     }
@@ -504,7 +473,7 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
     // Prophet
     std::string prophet_path = models_dir + "/" + name + "_prophet.bin";
     if (fs::exists(prophet_path)) {
-        auto result = evaluate_prophet(prophet_path, test_data, name, pred_len);
+        auto result = evaluate_prophet(prophet_path, test_data, name);
         univariate_results.push_back(result);
         print_result(result);
     }
@@ -544,9 +513,8 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
 
 void save_results_csv(const std::vector<EvalResult>& results, const std::string& filepath) {
     std::ofstream file(filepath);
-    file << "Dataset,Model,MSE,MAE,Parameters,DatasetLength,TestSamples,"
-         << "TotalInference_ms,PerSampleLatency_ms,PerPointLatency_us,"
-         << "ThroughputSamples_per_s,ThroughputPoints_per_s\n";
+    file << "Dataset,Model,MSE,MAE,Parameters,TestDataPoints,"
+         << "TotalInference_ms,Latency_us,Throughput_pts_per_s\n";
 
     for (const auto& r : results) {
         file << r.dataset << ","
@@ -554,13 +522,10 @@ void save_results_csv(const std::vector<EvalResult>& results, const std::string&
              << std::fixed << std::setprecision(8) << r.mse << ","
              << r.mae << ","
              << r.param_count << ","
-             << r.dataset_length << ","
-             << r.test_samples << ","
+             << r.test_data_points << ","
              << std::setprecision(4) << r.total_inference_ms << ","
-             << r.per_sample_latency_ms << ","
-             << std::setprecision(2) << r.per_point_latency_us << ","
-             << r.throughput_samples << ","
-             << r.throughput_points << "\n";
+             << std::setprecision(2) << r.latency_per_point_us << ","
+             << r.throughput_points_per_s << "\n";
     }
 
     file.close();
@@ -578,12 +543,12 @@ void print_summary(const std::vector<EvalResult>& results, const std::string& ti
     }
 
     std::cout << std::left << std::setw(14) << "Model"
-              << std::right << std::setw(11) << "Avg MSE"
+              << std::right << std::setw(12) << "Avg MSE"
               << std::setw(11) << "Avg MAE"
               << std::setw(9) << "Params"
-              << std::setw(12) << "Latency(ms)"
-              << std::setw(14) << "Tput(smp/s)" << std::endl;
-    std::cout << std::string(71, '-') << std::endl;
+              << std::setw(13) << "Latency(us)"
+              << std::setw(14) << "Throughput" << std::endl;
+    std::cout << std::string(73, '-') << std::endl;
 
     for (const auto& [model_name, model_results] : by_model) {
         double avg_mse = 0, avg_mae = 0, avg_latency = 0, avg_throughput = 0;
@@ -593,18 +558,18 @@ void print_summary(const std::vector<EvalResult>& results, const std::string& ti
             avg_mse += r.mse;
             avg_mae += r.mae;
             avg_params += r.param_count;
-            avg_latency += r.per_sample_latency_ms;
-            avg_throughput += r.throughput_samples;
+            avg_latency += r.latency_per_point_us;
+            avg_throughput += r.throughput_points_per_s;
         }
 
         size_t n = model_results.size();
         std::cout << std::left << std::setw(14) << model_name
                   << std::right << std::fixed << std::setprecision(6)
-                  << std::setw(11) << avg_mse / n
+                  << std::setw(12) << avg_mse / n
                   << std::setw(11) << avg_mae / n
                   << std::setw(9) << avg_params / n
-                  << std::setprecision(4)
-                  << std::setw(12) << avg_latency / n
+                  << std::setprecision(2)
+                  << std::setw(13) << avg_latency / n
                   << std::setprecision(2)
                   << std::setw(14) << avg_throughput / n << std::endl;
     }
@@ -612,18 +577,15 @@ void print_summary(const std::vector<EvalResult>& results, const std::string& ti
 
 int main() {
     std::cout << "========================================================================\n";
-    std::cout << "Model Evaluation: MSE, MAE, Parameters, Latency, Throughput\n";
+    std::cout << "Model Evaluation - Streaming Mode (1 point at a time)\n";
     std::cout << "========================================================================\n";
-    std::cout << "\nMetrics:\n";
-    std::cout << "  - MSE/MAE: Mean Squared/Absolute Error on test set\n";
+    std::cout << "\nMetrics (per data point):\n";
+    std::cout << "  - MSE/MAE: Mean Squared/Absolute Error\n";
     std::cout << "  - Params: Model parameter count\n";
-    std::cout << "  - DataLen: Test dataset length\n";
-    std::cout << "  - Samples: Number of sliding window predictions\n";
-    std::cout << "  - Total(ms): Total inference time for all samples\n";
-    std::cout << "  - Per-Smp(ms): Latency per sample (sliding window)\n";
-    std::cout << "  - Per-Pt(us): Latency per predicted point (microseconds)\n";
-    std::cout << "  - Tput(smp/s): Samples processed per second\n";
-    std::cout << "  - Tput(pt/s): Points predicted per second\n";
+    std::cout << "  - TestRows: Total rows in test dataset\n";
+    std::cout << "  - Total(ms): Total inference time for all points\n";
+    std::cout << "  - Latency(us): Microseconds per data point prediction\n";
+    std::cout << "  - Throughput: Data points predicted per second\n";
     std::cout << std::endl;
 
     std::vector<EvalResult> univariate_results;
@@ -643,13 +605,13 @@ int main() {
     evaluate_dataset("weather", "weather", univariate_results, multivariate_results);
     evaluate_dataset("electricity", "electricity", univariate_results, multivariate_results);
 
-    std::cout << std::string(130, '-') << std::endl;
+    std::cout << std::string(105, '-') << std::endl;
 
     // Print summaries
     print_summary(univariate_results, "Univariate Models Summary");
     print_summary(multivariate_results, "Multivariate Models Summary");
 
-    // Save to CSV files (after all timing is done)
+    // Save to CSV files
     std::cout << std::endl;
     save_results_csv(univariate_results, BASE_DIR + "/evaluation_univariate.csv");
     save_results_csv(multivariate_results, BASE_DIR + "/evaluation_multivariate.csv");
