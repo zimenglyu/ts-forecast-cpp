@@ -2,6 +2,53 @@
 
 A lightweight C++ library for time series forecasting, designed for embedded systems like Raspberry Pi. No external dependencies required.
 
+## Quick Start: Run Benchmarks
+
+Pre-trained models and datasets are included. To evaluate all models:
+
+```bash
+# Clone and build
+git clone https://github.com/zimenglyu/ts-forecast-cpp.git
+cd ts-forecast-cpp
+mkdir build && cd build
+cmake ..
+make -j4
+
+# Run evaluation (from build directory)
+./evaluate_models
+```
+
+Results are saved to `benchmark_datasets/`:
+- `evaluation_univariate.csv` - All univariate model results
+- `evaluation_multivariate.csv` - Multivariate model results
+- `evaluation_all.csv` - Combined results
+
+### Output Metrics
+
+| Metric | Description |
+|--------|-------------|
+| MSE | Mean Squared Error on test set |
+| MAE | Mean Absolute Error on test set |
+| Parameters | Model parameter count |
+| DatasetLength | Test dataset length |
+| TestSamples | Number of sliding window predictions |
+| TotalInference_ms | Total inference time (milliseconds) |
+| PerSampleLatency_ms | Latency per sample window (ms) |
+| PerPointLatency_us | Latency per predicted point (microseconds) |
+| ThroughputSamples_per_s | Samples processed per second |
+| ThroughputPoints_per_s | Points predicted per second |
+
+### For Raspberry Pi
+
+```bash
+# Optimized build for ARM
+cmake -DBUILD_FOR_RPI=ON ..
+make -j4
+
+# Run from build directory
+./evaluate_models
+```
+
 ## Features
 
 - **ARIMA** - AutoRegressive Integrated Moving Average
@@ -13,19 +60,11 @@ A lightweight C++ library for time series forecasting, designed for embedded sys
   - Simple Exponential Smoothing (SES)
   - Holt's Linear Trend Method
   - Holt-Winters Seasonal Method (additive and multiplicative)
-  - ETS state-space models
 
 - **Prophet-like Model**
   - Additive decomposition (trend + seasonality)
   - Piecewise linear/logistic growth
   - Custom seasonalities via Fourier series
-  - Changepoint detection
-
-- **Gradient Boosting** (XGBoost-like)
-  - Decision tree ensembles
-  - Time series wrapper with lag features
-  - Rolling statistics features
-  - Multiple loss functions (MSE, MAE, Huber)
 
 - **DLinear** (Zeng et al., 2022)
   - Trend-seasonal decomposition with linear layers
@@ -66,11 +105,16 @@ make -j4
 ```bash
 cd build
 
-# Run examples
+# Evaluate pre-trained models on all datasets
+./evaluate_models
+
+# Train models from scratch (takes time)
+./train_all_models
+
+# Run other examples
 ./example_arima
 ./example_exponential_smoothing
 ./example_prophet
-./example_gradient_boosting
 ./demo
 
 # Run tests
@@ -78,6 +122,21 @@ cd build
 ./test_etth1         # ETTh1 dataset benchmark
 ./test_save_load     # Save/load functionality
 ```
+
+## Included Datasets and Models
+
+Pre-trained models for 8 datasets (7 univariate models + 1 multivariate):
+
+| Dataset | Train Size | Test Size | Models |
+|---------|------------|-----------|--------|
+| ETTh1 | 12,194 | 2,613 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear, DLinear-MV |
+| ETTh2 | 12,194 | 2,613 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear, DLinear-MV |
+| ETTm1 | 48,776 | 10,452 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear, DLinear-MV |
+| ETTm2 | 48,776 | 10,452 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear, DLinear-MV |
+| Exchange Rate | 5,311 | 1,138 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear, DLinear-MV |
+| ILI (Illness) | 676 | 145 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear, DLinear-MV |
+| Weather | 36,887 | 7,904 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear, DLinear-MV |
+| Electricity | 18,412 | 3,946 | ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear |
 
 ## Usage
 
@@ -171,7 +230,6 @@ ts-forecast-cpp/
 │   ├── arima.hpp
 │   ├── exponential_smoothing.hpp
 │   ├── prophet.hpp
-│   ├── gradient_boosting.hpp
 │   ├── dlinear.hpp
 │   ├── utils.hpp                # Scalers, metrics, utilities
 │   └── csv_reader.hpp
@@ -179,13 +237,23 @@ ts-forecast-cpp/
 │   ├── arima.cpp
 │   ├── exponential_smoothing.cpp
 │   ├── prophet.cpp
-│   ├── gradient_boosting.cpp
 │   ├── dlinear.cpp
 │   └── utils.cpp
 ├── examples/
+│   ├── evaluate_models.cpp      # Benchmark evaluation
+│   ├── train_all_models.cpp     # Train all models
 │   └── *.cpp
 ├── tests/
 │   └── *.cpp
+├── benchmark_datasets/
+│   ├── ETT-small/               # ETTh1, ETTh2, ETTm1, ETTm2
+│   ├── exchange_rate/
+│   ├── illness/
+│   ├── weather/
+│   ├── electricity/
+│   ├── evaluation_univariate.csv
+│   ├── evaluation_multivariate.csv
+│   └── evaluation_all.csv
 └── CMakeLists.txt
 ```
 
@@ -227,16 +295,6 @@ struct Metrics {
     double r2;    // R-squared
 };
 ```
-
-## Tested Datasets
-
-Verified on standard time series benchmarks:
-- ETTh1, ETTh2, ETTm1, ETTm2 (Electricity Transformer Temperature)
-- Electricity (321 variables)
-- Exchange Rate (8 currencies)
-- Traffic (862 sensors)
-- Weather (21 features)
-- ILI (Influenza-like Illness)
 
 ## Citation
 
