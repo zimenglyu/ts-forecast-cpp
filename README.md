@@ -33,6 +33,7 @@ Results are saved to `benchmark_datasets/`:
 | TestDataPoints | Total rows in test dataset |
 | TotalInference_s | Total inference time (seconds) |
 | Latency_s | Seconds per data point prediction |
+| Throughput | Data points predicted per second |
 
 ### For Raspberry Pi
 

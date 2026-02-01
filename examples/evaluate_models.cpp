@@ -20,6 +20,7 @@ struct EvalResult {
     int test_data_points;          // Total rows in test data
     double total_inference_s;      // Total inference time in seconds
     double latency_per_point_s;    // Seconds per data point
+    double throughput;             // Data points per second
     bool is_multivariate;
 };
 
@@ -45,8 +46,9 @@ void print_header() {
               << std::setw(10) << "TestRows"
               << std::setw(12) << "Total(s)"
               << std::setw(14) << "Latency(s)"
+              << std::setw(14) << "Throughput"
               << std::endl;
-    std::cout << std::string(93, '-') << std::endl;
+    std::cout << std::string(107, '-') << std::endl;
 }
 
 void print_result(const EvalResult& r) {
@@ -60,6 +62,7 @@ void print_result(const EvalResult& r) {
               << std::setw(10) << r.test_data_points
               << std::setprecision(4) << std::setw(12) << r.total_inference_s
               << std::scientific << std::setprecision(2) << std::setw(14) << r.latency_per_point_s
+              << std::fixed << std::setprecision(2) << std::setw(14) << r.throughput
               << std::endl;
 }
 
@@ -105,6 +108,7 @@ EvalResult evaluate_arima(const std::string& model_path,
     result.mae = total_mae / n_points;
     result.total_inference_s = std::chrono::duration<double>(end - start).count();
     result.latency_per_point_s = result.total_inference_s / n_points;
+    result.throughput = n_points / result.total_inference_s;
 
     return result;
 }
@@ -147,6 +151,7 @@ EvalResult evaluate_ses(const std::string& model_path,
     result.mae = total_mae / n_points;
     result.total_inference_s = std::chrono::duration<double>(end - start).count();
     result.latency_per_point_s = result.total_inference_s / n_points;
+    result.throughput = n_points / result.total_inference_s;
 
     return result;
 }
@@ -189,6 +194,7 @@ EvalResult evaluate_holtwinters(const std::string& model_path,
     result.mae = total_mae / n_points;
     result.total_inference_s = std::chrono::duration<double>(end - start).count();
     result.latency_per_point_s = result.total_inference_s / n_points;
+    result.throughput = n_points / result.total_inference_s;
 
     return result;
 }
@@ -231,6 +237,7 @@ EvalResult evaluate_prophet(const std::string& model_path,
     result.mae = total_mae / n_points;
     result.total_inference_s = std::chrono::duration<double>(end - start).count();
     result.latency_per_point_s = result.total_inference_s / n_points;
+    result.throughput = n_points / result.total_inference_s;
 
     return result;
 }
@@ -259,6 +266,7 @@ EvalResult evaluate_dlinear(const std::string& model_path,
         result.mse = result.mae = 0;
         result.total_inference_s = 0;
         result.latency_per_point_s = 0;
+        result.throughput = 0;
         return result;
     }
 
@@ -294,6 +302,7 @@ EvalResult evaluate_dlinear(const std::string& model_path,
     result.mae = total_mae / n_predictions;
     result.total_inference_s = std::chrono::duration<double>(end - start).count();
     result.latency_per_point_s = result.total_inference_s / n_predictions;
+    result.throughput = n_predictions / result.total_inference_s;
 
     return result;
 }
@@ -319,6 +328,7 @@ EvalResult evaluate_nlinear(const std::string& model_path,
         result.mse = result.mae = 0;
         result.total_inference_s = 0;
         result.latency_per_point_s = 0;
+        result.throughput = 0;
         return result;
     }
 
@@ -354,6 +364,7 @@ EvalResult evaluate_nlinear(const std::string& model_path,
     result.mae = total_mae / n_predictions;
     result.total_inference_s = std::chrono::duration<double>(end - start).count();
     result.latency_per_point_s = result.total_inference_s / n_predictions;
+    result.throughput = n_predictions / result.total_inference_s;
 
     return result;
 }
@@ -379,6 +390,7 @@ EvalResult evaluate_linear(const std::string& model_path,
         result.mse = result.mae = 0;
         result.total_inference_s = 0;
         result.latency_per_point_s = 0;
+        result.throughput = 0;
         return result;
     }
 
@@ -414,6 +426,7 @@ EvalResult evaluate_linear(const std::string& model_path,
     result.mae = total_mae / n_predictions;
     result.total_inference_s = std::chrono::duration<double>(end - start).count();
     result.latency_per_point_s = result.total_inference_s / n_predictions;
+    result.throughput = n_predictions / result.total_inference_s;
 
     return result;
 }
@@ -501,7 +514,7 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
 void save_results_csv(const std::vector<EvalResult>& results, const std::string& filepath) {
     std::ofstream file(filepath);
     file << "Dataset,Model,MSE,MAE,Parameters,TestDataPoints,"
-         << "TotalInference_s,Latency_s\n";
+         << "TotalInference_s,Latency_s,Throughput\n";
 
     for (const auto& r : results) {
         file << r.dataset << ","
@@ -511,7 +524,8 @@ void save_results_csv(const std::vector<EvalResult>& results, const std::string&
              << r.param_count << ","
              << r.test_data_points << ","
              << std::setprecision(6) << r.total_inference_s << ","
-             << std::scientific << std::setprecision(6) << r.latency_per_point_s << "\n";
+             << std::scientific << std::setprecision(6) << r.latency_per_point_s << ","
+             << std::fixed << std::setprecision(2) << r.throughput << "\n";
     }
 
     file.close();
@@ -532,11 +546,12 @@ void print_summary(const std::vector<EvalResult>& results, const std::string& ti
               << std::right << std::setw(12) << "Avg MSE"
               << std::setw(11) << "Avg MAE"
               << std::setw(9) << "Params"
-              << std::setw(14) << "Latency(s)" << std::endl;
-    std::cout << std::string(60, '-') << std::endl;
+              << std::setw(14) << "Latency(s)"
+              << std::setw(14) << "Throughput" << std::endl;
+    std::cout << std::string(74, '-') << std::endl;
 
     for (const auto& [model_name, model_results] : by_model) {
-        double avg_mse = 0, avg_mae = 0, avg_latency = 0;
+        double avg_mse = 0, avg_mae = 0, avg_latency = 0, avg_throughput = 0;
         size_t avg_params = 0;
 
         for (const auto& r : model_results) {
@@ -544,6 +559,7 @@ void print_summary(const std::vector<EvalResult>& results, const std::string& ti
             avg_mae += r.mae;
             avg_params += r.param_count;
             avg_latency += r.latency_per_point_s;
+            avg_throughput += r.throughput;
         }
 
         size_t n = model_results.size();
@@ -553,7 +569,9 @@ void print_summary(const std::vector<EvalResult>& results, const std::string& ti
                   << std::setw(11) << avg_mae / n
                   << std::setw(9) << avg_params / n
                   << std::scientific << std::setprecision(2)
-                  << std::setw(14) << avg_latency / n << std::endl;
+                  << std::setw(14) << avg_latency / n
+                  << std::fixed << std::setprecision(2)
+                  << std::setw(14) << avg_throughput / n << std::endl;
     }
 }
 
@@ -567,6 +585,7 @@ int main() {
     std::cout << "  - TestRows: Total rows in test dataset\n";
     std::cout << "  - Total(s): Total inference time in seconds\n";
     std::cout << "  - Latency(s): Seconds per data point prediction\n";
+    std::cout << "  - Throughput: Data points predicted per second\n";
     std::cout << std::endl;
 
     std::vector<EvalResult> univariate_results;
@@ -586,7 +605,7 @@ int main() {
     evaluate_dataset("weather", "weather", univariate_results, multivariate_results);
     evaluate_dataset("electricity", "electricity", univariate_results, multivariate_results);
 
-    std::cout << std::string(93, '-') << std::endl;
+    std::cout << std::string(107, '-') << std::endl;
 
     // Print summaries
     print_summary(univariate_results, "Univariate Models Summary");
