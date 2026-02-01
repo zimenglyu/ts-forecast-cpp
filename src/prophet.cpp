@@ -538,14 +538,15 @@ void NeuralProphet::fit(const std::vector<double>& values, int epochs, double le
         double total_loss = 0.0;
         int n_samples = static_cast<int>(values.size()) - n_lags_;
 
-        for (int t = n_lags_; t < static_cast<int>(values.size()); ++t) {
+        for (int t = 0; t < n_samples; ++t) {
+            int idx = n_lags_ + t;
             // Create input from lags
             std::vector<double> input(n_lags_);
             for (int i = 0; i < n_lags_; ++i) {
-                input[i] = values[t - n_lags_ + i];
+                input[i] = values[idx - n_lags_ + i];
             }
 
-            double target = values[t];
+            double target = values[idx];
             backward(input, target, learning_rate);
 
             std::vector<double> pred = forward(input);

@@ -212,12 +212,11 @@ private:
     bool weekly_seasonality_;
 
     // Simple neural network weights (single hidden layer)
+    int hidden_size_;
     std::vector<std::vector<double>> W1_;  // Input to hidden
     std::vector<double> b1_;               // Hidden bias
     std::vector<double> W2_;               // Hidden to output
     double b2_;                            // Output bias
-
-    int hidden_size_;
 
     std::vector<double> data_;
     bool fitted_;
