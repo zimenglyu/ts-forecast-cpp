@@ -23,20 +23,17 @@ Results are saved to `benchmark_datasets/`:
 - `evaluation_multivariate.csv` - Multivariate model results
 - `evaluation_all.csv` - Combined results
 
-### Output Metrics
+### Output Metrics (Streaming Mode - 1 point at a time)
 
 | Metric | Description |
 |--------|-------------|
 | MSE | Mean Squared Error on test set |
 | MAE | Mean Absolute Error on test set |
 | Parameters | Model parameter count |
-| DatasetLength | Test dataset length |
-| TestSamples | Number of sliding window predictions |
+| TestDataPoints | Total rows in test dataset |
 | TotalInference_ms | Total inference time (milliseconds) |
-| PerSampleLatency_ms | Latency per sample window (ms) |
-| PerPointLatency_us | Latency per predicted point (microseconds) |
-| ThroughputSamples_per_s | Samples processed per second |
-| ThroughputPoints_per_s | Points predicted per second |
+| Latency_us | Latency per data point (microseconds) |
+| Throughput_pts_per_s | Data points predicted per second |
 
 ### For Raspberry Pi
 
