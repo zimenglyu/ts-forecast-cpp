@@ -498,69 +498,84 @@ void evaluate_dataset(const std::string& name, const std::string& subdir,
         print_result(result);
     }
 
-    // ARIMA
-    std::string arima_path = models_dir + "/" + name + "_arima.bin";
-    if (fs::exists(arima_path)) {
-        auto result = evaluate_arima(arima_path, test_data, name);
-        univariate_results.push_back(result);
-        print_result(result);
+    // Evaluate all 10 runs of classical models
+    for (int run = 0; run < 10; ++run) {
+        std::string run_suffix = "_run" + std::to_string(run);
+
+        // ARIMA
+        std::string arima_path = models_dir + "/" + name + "_arima" + run_suffix + ".bin";
+        if (fs::exists(arima_path)) {
+            auto result = evaluate_arima(arima_path, test_data, name);
+            result.model_name = "ARIMA_run" + std::to_string(run);
+            univariate_results.push_back(result);
+            print_result(result);
+        }
+
+        // SES
+        std::string ses_path = models_dir + "/" + name + "_ses" + run_suffix + ".bin";
+        if (fs::exists(ses_path)) {
+            auto result = evaluate_ses(ses_path, test_data, name);
+            result.model_name = "SES_run" + std::to_string(run);
+            univariate_results.push_back(result);
+            print_result(result);
+        }
+
+        // HoltWinters
+        std::string hw_path = models_dir + "/" + name + "_holtwinters" + run_suffix + ".bin";
+        if (fs::exists(hw_path)) {
+            auto result = evaluate_holtwinters(hw_path, test_data, name);
+            result.model_name = "HW_run" + std::to_string(run);
+            univariate_results.push_back(result);
+            print_result(result);
+        }
     }
 
-    // SES
-    std::string ses_path = models_dir + "/" + name + "_ses.bin";
-    if (fs::exists(ses_path)) {
-        auto result = evaluate_ses(ses_path, test_data, name);
-        univariate_results.push_back(result);
-        print_result(result);
+    // Prophet - SKIPPED for repeated runs
+    // std::string prophet_path = models_dir + "/" + name + "_prophet.bin";
+    // if (fs::exists(prophet_path)) {
+    //     auto result = evaluate_prophet(prophet_path, test_data, name);
+    //     univariate_results.push_back(result);
+    //     print_result(result);
+    // }
+
+    // Evaluate all 10 runs of neural models
+    for (int run = 0; run < 10; ++run) {
+        std::string run_suffix = "_run" + std::to_string(run);
+
+        // DLinear
+        std::string dlinear_path = models_dir + "/" + name + "_dlinear" + run_suffix + ".bin";
+        if (fs::exists(dlinear_path)) {
+            auto result = evaluate_dlinear(dlinear_path, test_data, name, "DLinear_run" + std::to_string(run));
+            univariate_results.push_back(result);
+            print_result(result);
+        }
+
+        // NLinear
+        std::string nlinear_path = models_dir + "/" + name + "_nlinear" + run_suffix + ".bin";
+        if (fs::exists(nlinear_path)) {
+            auto result = evaluate_nlinear(nlinear_path, test_data, name);
+            result.model_name = "NLinear_run" + std::to_string(run);
+            univariate_results.push_back(result);
+            print_result(result);
+        }
+
+        // Linear
+        std::string linear_path = models_dir + "/" + name + "_linear" + run_suffix + ".bin";
+        if (fs::exists(linear_path)) {
+            auto result = evaluate_linear(linear_path, test_data, name);
+            result.model_name = "Linear_run" + std::to_string(run);
+            univariate_results.push_back(result);
+            print_result(result);
+        }
     }
 
-    // HoltWinters
-    std::string hw_path = models_dir + "/" + name + "_holtwinters.bin";
-    if (fs::exists(hw_path)) {
-        auto result = evaluate_holtwinters(hw_path, test_data, name);
-        univariate_results.push_back(result);
-        print_result(result);
-    }
-
-    // Prophet
-    std::string prophet_path = models_dir + "/" + name + "_prophet.bin";
-    if (fs::exists(prophet_path)) {
-        auto result = evaluate_prophet(prophet_path, test_data, name);
-        univariate_results.push_back(result);
-        print_result(result);
-    }
-
-    // DLinear (univariate)
-    std::string dlinear_path = models_dir + "/" + name + "_dlinear.bin";
-    if (fs::exists(dlinear_path)) {
-        auto result = evaluate_dlinear(dlinear_path, test_data, name, "DLinear");
-        univariate_results.push_back(result);
-        print_result(result);
-    }
-
-    // NLinear
-    std::string nlinear_path = models_dir + "/" + name + "_nlinear.bin";
-    if (fs::exists(nlinear_path)) {
-        auto result = evaluate_nlinear(nlinear_path, test_data, name);
-        univariate_results.push_back(result);
-        print_result(result);
-    }
-
-    // Linear
-    std::string linear_path = models_dir + "/" + name + "_linear.bin";
-    if (fs::exists(linear_path)) {
-        auto result = evaluate_linear(linear_path, test_data, name);
-        univariate_results.push_back(result);
-        print_result(result);
-    }
-
-    // DLinear MV (multivariate)
-    std::string dlinear_mv_path = models_dir + "/" + name + "_dlinear_mv.bin";
-    if (fs::exists(dlinear_mv_path)) {
-        auto result = evaluate_dlinear(dlinear_mv_path, test_data, name, "DLinear-MV", true);
-        multivariate_results.push_back(result);
-        print_result(result);
-    }
+    // DLinear MV (multivariate) - SKIPPED for repeated runs
+    // std::string dlinear_mv_path = models_dir + "/" + name + "_dlinear_mv.bin";
+    // if (fs::exists(dlinear_mv_path)) {
+    //     auto result = evaluate_dlinear(dlinear_mv_path, test_data, name, "DLinear-MV", true);
+    //     multivariate_results.push_back(result);
+    //     print_result(result);
+    // }
 }
 
 void save_results_csv(const std::vector<EvalResult>& results, const std::string& filepath) {
@@ -645,11 +660,11 @@ int main() {
 
     print_header();
 
-    // ETT datasets
+    // ETT datasets (skipping ETTh2, ETTm2 for 10-run experiment)
     evaluate_dataset("ETTh1", "ETT-small", univariate_results, multivariate_results);
-    evaluate_dataset("ETTh2", "ETT-small", univariate_results, multivariate_results);
+    // evaluate_dataset("ETTh2", "ETT-small", univariate_results, multivariate_results);  // SKIPPED
     evaluate_dataset("ETTm1", "ETT-small", univariate_results, multivariate_results);
-    evaluate_dataset("ETTm2", "ETT-small", univariate_results, multivariate_results);
+    // evaluate_dataset("ETTm2", "ETT-small", univariate_results, multivariate_results);  // SKIPPED
 
     // Other datasets
     evaluate_dataset("exchange_rate", "exchange_rate", univariate_results, multivariate_results);

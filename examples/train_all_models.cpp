@@ -54,72 +54,22 @@ void train_univariate_models(const std::string& dataset_name,
 
     fs::create_directories(output_dir);
 
-    // ARIMA(2,1,1)
-    try {
-        std::cout << "  Training ARIMA(2,1,1)..." << std::flush;
-        auto start = std::chrono::high_resolution_clock::now();
-
-        ts::ARIMA arima(2, 1, 1);
-        arima.fit(train_data);
-
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
-
-        // Validate
-        auto forecast = arima.forecast(std::min(24, static_cast<int>(val_data.size())));
-        std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
-        auto metrics = ts::evaluate(val_subset, forecast.predictions);
-
-        std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
-                  << " (" << ms << "ms)" << std::endl;
-
-        // Save model
-        std::string model_path = output_dir + "/" + dataset_name + "_arima.bin";
-        arima.save(model_path);
-        std::cout << "    Saved: " << model_path << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << " Failed: " << e.what() << std::endl;
-    }
-
-    // Simple Exponential Smoothing
-    try {
-        std::cout << "  Training SES..." << std::flush;
-        auto start = std::chrono::high_resolution_clock::now();
-
-        ts::SimpleExponentialSmoothing ses;
-        ses.fit(train_data);
-
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
-
-        auto forecast = ses.forecast(std::min(24, static_cast<int>(val_data.size())));
-        std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
-        auto metrics = ts::evaluate(val_subset, forecast.predictions);
-
-        std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
-                  << " (" << ms << "ms)" << std::endl;
-
-        // Save model
-        std::string model_path = output_dir + "/" + dataset_name + "_ses.bin";
-        ses.save(model_path);
-        std::cout << "    Saved: " << model_path << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << " Failed: " << e.what() << std::endl;
-    }
-
-    // Holt-Winters (period=24 for hourly data)
-    if (train_data.size() >= 48) {
+    // Train classical models 10 times each
+    // Note: These are deterministic, so results will be identical across runs
+    for (int run = 0; run < 10; ++run) {
+        // ARIMA(2,1,1)
         try {
-            std::cout << "  Training HoltWinters(24)..." << std::flush;
+            std::cout << "  Training ARIMA(2,1,1) run " << run << "..." << std::flush;
             auto start = std::chrono::high_resolution_clock::now();
 
-            ts::HoltWinters hw(24, ts::HoltWinters::SeasonalType::ADDITIVE);
-            hw.fit(train_data);
+            ts::ARIMA arima(2, 1, 1);
+            arima.fit(train_data);
 
             auto end = std::chrono::high_resolution_clock::now();
             double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-            auto forecast = hw.forecast(std::min(24, static_cast<int>(val_data.size())));
+            // Validate
+            auto forecast = arima.forecast(std::min(24, static_cast<int>(val_data.size())));
             std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
             auto metrics = ts::evaluate(val_subset, forecast.predictions);
 
@@ -127,126 +77,149 @@ void train_univariate_models(const std::string& dataset_name,
                       << " (" << ms << "ms)" << std::endl;
 
             // Save model
-            std::string model_path = output_dir + "/" + dataset_name + "_holtwinters.bin";
-            hw.save(model_path);
+            std::string model_path = output_dir + "/" + dataset_name + "_arima_run" + std::to_string(run) + ".bin";
+            arima.save(model_path);
             std::cout << "    Saved: " << model_path << std::endl;
         } catch (const std::exception& e) {
             std::cout << " Failed: " << e.what() << std::endl;
         }
+
+        // Simple Exponential Smoothing
+        try {
+            std::cout << "  Training SES run " << run << "..." << std::flush;
+            auto start = std::chrono::high_resolution_clock::now();
+
+            ts::SimpleExponentialSmoothing ses;
+            ses.fit(train_data);
+
+            auto end = std::chrono::high_resolution_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+            auto forecast = ses.forecast(std::min(24, static_cast<int>(val_data.size())));
+            std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
+            auto metrics = ts::evaluate(val_subset, forecast.predictions);
+
+            std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
+                      << " (" << ms << "ms)" << std::endl;
+
+            // Save model
+            std::string model_path = output_dir + "/" + dataset_name + "_ses_run" + std::to_string(run) + ".bin";
+            ses.save(model_path);
+            std::cout << "    Saved: " << model_path << std::endl;
+        } catch (const std::exception& e) {
+            std::cout << " Failed: " << e.what() << std::endl;
+        }
+
+        // Holt-Winters (period=24 for hourly data)
+        if (train_data.size() >= 48) {
+            try {
+                std::cout << "  Training HoltWinters(24) run " << run << "..." << std::flush;
+                auto start = std::chrono::high_resolution_clock::now();
+
+                ts::HoltWinters hw(24, ts::HoltWinters::SeasonalType::ADDITIVE);
+                hw.fit(train_data);
+
+                auto end = std::chrono::high_resolution_clock::now();
+                double ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+                auto forecast = hw.forecast(std::min(24, static_cast<int>(val_data.size())));
+                std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
+                auto metrics = ts::evaluate(val_subset, forecast.predictions);
+
+                std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
+                          << " (" << ms << "ms)" << std::endl;
+
+                // Save model
+                std::string model_path = output_dir + "/" + dataset_name + "_holtwinters_run" + std::to_string(run) + ".bin";
+                hw.save(model_path);
+                std::cout << "    Saved: " << model_path << std::endl;
+            } catch (const std::exception& e) {
+                std::cout << " Failed: " << e.what() << std::endl;
+            }
+        }
     }
 
-    // Prophet
-    try {
-        std::cout << "  Training Prophet..." << std::flush;
-        auto start = std::chrono::high_resolution_clock::now();
+    // Prophet - SKIPPED for 10-run experiment
 
-        ts::Prophet prophet;
-        prophet.add_seasonality("daily", 24.0, 5);
-        prophet.fit(train_data);
+    // Train DLinear, NLinear, Linear 10 times each
+    int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
+    int pred_len = 1;
 
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
+    for (int run = 0; run < 10; ++run) {
+        // DLinear
+        try {
+            std::cout << "  Training DLinear(96,1) run " << run << "..." << std::flush;
+            auto start = std::chrono::high_resolution_clock::now();
 
-        auto forecast = prophet.forecast(std::min(24, static_cast<int>(val_data.size())));
-        std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
-        auto metrics = ts::evaluate(val_subset, forecast.predictions);
+            ts::DLinear dlinear(seq_len, pred_len, 25);
+            dlinear.fit(train_data, 50, 0.001, 32);
 
-        std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
-                  << " (" << ms << "ms)" << std::endl;
+            auto end = std::chrono::high_resolution_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-        // Save model
-        std::string model_path = output_dir + "/" + dataset_name + "_prophet.bin";
-        prophet.save(model_path);
-        std::cout << "    Saved: " << model_path << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << " Failed: " << e.what() << std::endl;
-    }
+            auto forecast = dlinear.forecast(std::min(pred_len, static_cast<int>(val_data.size())));
+            std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
+            auto metrics = ts::evaluate(val_subset, forecast.predictions);
 
-    // DLinear
-    try {
-        std::cout << "  Training DLinear(96,1)..." << std::flush;
-        auto start = std::chrono::high_resolution_clock::now();
+            std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
+                      << " (" << ms << "ms)" << std::endl;
 
-        int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
-        int pred_len = 1;
+            std::string model_path = output_dir + "/" + dataset_name + "_dlinear_run" + std::to_string(run) + ".bin";
+            dlinear.save(model_path);
+            std::cout << "    Saved: " << model_path << std::endl;
+        } catch (const std::exception& e) {
+            std::cout << " Failed: " << e.what() << std::endl;
+        }
 
-        ts::DLinear dlinear(seq_len, pred_len, 25);
-        dlinear.fit(train_data, 50, 0.001, 32);
+        // NLinear
+        try {
+            std::cout << "  Training NLinear(96,1) run " << run << "..." << std::flush;
+            auto start = std::chrono::high_resolution_clock::now();
 
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
+            ts::NLinear nlinear(seq_len, pred_len);
+            nlinear.fit(train_data, 50, 0.001, 32);
 
-        auto forecast = dlinear.forecast(std::min(pred_len, static_cast<int>(val_data.size())));
-        std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
-        auto metrics = ts::evaluate(val_subset, forecast.predictions);
+            auto end = std::chrono::high_resolution_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-        std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
-                  << " (" << ms << "ms)" << std::endl;
+            auto forecast = nlinear.forecast(std::min(pred_len, static_cast<int>(val_data.size())));
+            std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
+            auto metrics = ts::evaluate(val_subset, forecast.predictions);
 
-        // Save model
-        std::string model_path = output_dir + "/" + dataset_name + "_dlinear.bin";
-        dlinear.save(model_path);
-        std::cout << "    Saved: " << model_path << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << " Failed: " << e.what() << std::endl;
-    }
+            std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
+                      << " (" << ms << "ms)" << std::endl;
 
-    // NLinear
-    try {
-        std::cout << "  Training NLinear(96,1)..." << std::flush;
-        auto start = std::chrono::high_resolution_clock::now();
+            std::string model_path = output_dir + "/" + dataset_name + "_nlinear_run" + std::to_string(run) + ".bin";
+            nlinear.save(model_path);
+            std::cout << "    Saved: " << model_path << std::endl;
+        } catch (const std::exception& e) {
+            std::cout << " Failed: " << e.what() << std::endl;
+        }
 
-        int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
-        int pred_len = 1;
+        // Linear
+        try {
+            std::cout << "  Training Linear(96,1) run " << run << "..." << std::flush;
+            auto start = std::chrono::high_resolution_clock::now();
 
-        ts::NLinear nlinear(seq_len, pred_len);
-        nlinear.fit(train_data, 50, 0.001, 32);
+            ts::Linear linear(seq_len, pred_len);
+            linear.fit(train_data, 50, 0.001, 32);
 
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
+            auto end = std::chrono::high_resolution_clock::now();
+            double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-        auto forecast = nlinear.forecast(std::min(pred_len, static_cast<int>(val_data.size())));
-        std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
-        auto metrics = ts::evaluate(val_subset, forecast.predictions);
+            auto forecast = linear.forecast(std::min(pred_len, static_cast<int>(val_data.size())));
+            std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
+            auto metrics = ts::evaluate(val_subset, forecast.predictions);
 
-        std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
-                  << " (" << ms << "ms)" << std::endl;
+            std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
+                      << " (" << ms << "ms)" << std::endl;
 
-        // Save model
-        std::string model_path = output_dir + "/" + dataset_name + "_nlinear.bin";
-        nlinear.save(model_path);
-        std::cout << "    Saved: " << model_path << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << " Failed: " << e.what() << std::endl;
-    }
-
-    // Linear
-    try {
-        std::cout << "  Training Linear(96,1)..." << std::flush;
-        auto start = std::chrono::high_resolution_clock::now();
-
-        int seq_len = std::min(96, static_cast<int>(train_data.size()) / 4);
-        int pred_len = 1;
-
-        ts::Linear linear(seq_len, pred_len);
-        linear.fit(train_data, 50, 0.001, 32);
-
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
-
-        auto forecast = linear.forecast(std::min(pred_len, static_cast<int>(val_data.size())));
-        std::vector<double> val_subset(val_data.begin(), val_data.begin() + forecast.predictions.size());
-        auto metrics = ts::evaluate(val_subset, forecast.predictions);
-
-        std::cout << " RMSE=" << std::fixed << std::setprecision(4) << metrics.rmse
-                  << " (" << ms << "ms)" << std::endl;
-
-        // Save model
-        std::string model_path = output_dir + "/" + dataset_name + "_linear.bin";
-        linear.save(model_path);
-        std::cout << "    Saved: " << model_path << std::endl;
-    } catch (const std::exception& e) {
-        std::cout << " Failed: " << e.what() << std::endl;
+            std::string model_path = output_dir + "/" + dataset_name + "_linear_run" + std::to_string(run) + ".bin";
+            linear.save(model_path);
+            std::cout << "    Saved: " << model_path << std::endl;
+        } catch (const std::exception& e) {
+            std::cout << " Failed: " << e.what() << std::endl;
+        }
     }
 }
 
@@ -317,12 +290,10 @@ void process_dataset(const std::string& name, const std::string& subdir) {
     auto [train_mv, target_idx] = load_multivariate(train_path);
     auto [val_mv, _] = load_multivariate(val_path);
 
-    // Train multivariate DLinear (skip if too many features)
-    if (train_mv[0].size() <= 25) {  // Only for reasonably sized datasets
-        train_multivariate_dlinear(name, train_mv, val_mv, target_idx, output_dir);
-    } else {
-        std::cout << "  Skipping multivariate (too many features: " << train_mv[0].size() << ")" << std::endl;
-    }
+    // Multivariate DLinear - SKIPPED for 10-run experiment
+    // if (train_mv[0].size() <= 25) {
+    //     train_multivariate_dlinear(name, train_mv, val_mv, target_idx, output_dir);
+    // }
 
     // Save scaler for this dataset
     ts::MinMaxScaler scaler;
@@ -333,16 +304,16 @@ void process_dataset(const std::string& name, const std::string& subdir) {
 }
 
 int main() {
-    std::cout << "Training All Models on Benchmark Datasets" << std::endl;
-    std::cout << "==========================================" << std::endl;
-    std::cout << "Models: ARIMA, SES, HoltWinters, Prophet, DLinear, NLinear, Linear" << std::endl;
-    std::cout << "Skipping: traffic (too large)" << std::endl;
+    std::cout << "Training All Models (10 runs each) on Benchmark Datasets" << std::endl;
+    std::cout << "=========================================================" << std::endl;
+    std::cout << "Models: ARIMA, SES, HoltWinters, DLinear, NLinear, Linear (x10 runs each)" << std::endl;
+    std::cout << "Skipping: Prophet, ETTh2, ETTm2" << std::endl;
 
-    // ETT datasets
+    // ETT datasets (skipping ETTh2, ETTm2 for 10-run experiment)
     process_dataset("ETTh1", "ETT-small");
-    process_dataset("ETTh2", "ETT-small");
+    // process_dataset("ETTh2", "ETT-small");  // SKIPPED
     process_dataset("ETTm1", "ETT-small");
-    process_dataset("ETTm2", "ETT-small");
+    // process_dataset("ETTm2", "ETT-small");  // SKIPPED
 
     // Other datasets
     process_dataset("exchange_rate", "exchange_rate");
