@@ -31,9 +31,8 @@ Results are saved to `benchmark_datasets/`:
 | MAE | Mean Absolute Error on test set |
 | Parameters | Model parameter count |
 | TestDataPoints | Total rows in test dataset |
-| TotalInference_ms | Total inference time (milliseconds) |
-| Latency_us | Latency per data point (microseconds) |
-| Throughput_pts_per_s | Data points predicted per second |
+| TotalInference_s | Total inference time (seconds) |
+| Latency_s | Seconds per data point prediction |
 
 ### For Raspberry Pi
 
