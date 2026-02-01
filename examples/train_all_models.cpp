@@ -296,8 +296,8 @@ void train_multivariate_dlinear(const std::string& dataset_name,
 void process_dataset(const std::string& name, const std::string& subdir) {
     print_header("Processing: " + name);
 
-    std::string train_path = BASE_DIR + "/" + subdir + "/" + name + "_train_standard.csv";
-    std::string val_path = BASE_DIR + "/" + subdir + "/" + name + "_val_standard.csv";
+    std::string train_path = BASE_DIR + "/" + subdir + "/" + name + "_train_minmax.csv";
+    std::string val_path = BASE_DIR + "/" + subdir + "/" + name + "_val_minmax.csv";
     std::string output_dir = BASE_DIR + "/" + subdir + "/models";
 
     // Check if files exist
@@ -325,7 +325,7 @@ void process_dataset(const std::string& name, const std::string& subdir) {
     }
 
     // Save scaler for this dataset
-    ts::StandardScaler scaler;
+    ts::MinMaxScaler scaler;
     scaler.fit(train_mv);
     std::string scaler_path = output_dir + "/" + name + "_scaler.bin";
     scaler.save(scaler_path);

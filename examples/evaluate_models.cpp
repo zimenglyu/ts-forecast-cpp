@@ -434,7 +434,7 @@ EvalResult evaluate_linear(const std::string& model_path,
 void evaluate_dataset(const std::string& name, const std::string& subdir,
                       std::vector<EvalResult>& univariate_results,
                       std::vector<EvalResult>& multivariate_results) {
-    std::string test_path = BASE_DIR + "/" + subdir + "/" + name + "_test_standard.csv";
+    std::string test_path = BASE_DIR + "/" + subdir + "/" + name + "_test_minmax.csv";
     std::string models_dir = BASE_DIR + "/" + subdir + "/models";
 
     if (!fs::exists(test_path)) {
